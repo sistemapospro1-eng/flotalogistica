@@ -1,4 +1,4 @@
-#  Flota Operacion
+# Gestion Flota Operacion
 
 Prototipo web estatico para control operativo de flota. La primera version prioriza responsabilidad, trazabilidad y reportes del circuito principal de uso de vehiculos.
 
@@ -23,7 +23,7 @@ Prototipo web estatico para control operativo de flota. La primera version prior
 
 El GPS no forma parte de esta primera version. La aplicacion funciona completamente sin localizacion.
 
-La arquitectura queda preparada para incorporar mas adelante un modulo opcional de localizacion, por ejemplo con una capa `LocationProvider`, cuando EDESUR defina proveedor o API.
+La arquitectura queda preparada para incorporar mas adelante un modulo opcional de localizacion, por ejemplo con una capa `LocationProvider`, cuando la empresa defina proveedor o API.
 
 ## Datos
 
