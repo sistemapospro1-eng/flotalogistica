@@ -380,6 +380,9 @@ function renderVehicleDetail(vehicle) {
   const assignments = runtime.assignments.filter((item) => item.vehicleId === vehicle.id).sort(sortDesc("startAt"));
   const incidents = getOpenIncidents(vehicle.id);
   const maintenance = runtime.maintenance.filter((item) => item.vehicleId === vehicle.id).sort(sortDesc("createdAt"));
+  const documents = vehicle.documents || (runtime.documents || []).filter((item) => item.vehicleId === vehicle.id);
+  const equipment = vehicle.equipment || (runtime.equipment || []).filter((item) => item.vehicleId === vehicle.id);
+  const fireExtinguisher = equipment.find((item) => normalize(item.name).includes("matafuego"));
   return `
     <section class="panel detail-panel">
       <div class="panel-title-row">
@@ -395,6 +398,8 @@ function renderVehicleDetail(vehicle) {
         ${summaryItem("Sector", vehicle.sector || "-")}
         ${summaryItem("Ultimo km", vehicle.odometer || "s/d")}
         ${summaryItem("VTV", `${formatDate(vehicle.vtv)} ${stripTags(vtvBadge(vehicle))}`)}
+        ${summaryItem("VTH", vehicle.vth ? formatDate(vehicle.vth) : "-")}
+        ${summaryItem("Matafuego", fireExtinguisher ? `${fireExtinguisher.present ? "Presente" : "Faltante"} ${fireExtinguisher.expiresAt ? `| Vto ${formatDate(fireExtinguisher.expiresAt)}` : ""}` : "-")}
       </div>
       <div class="grid-3">
         <div>
@@ -408,6 +413,20 @@ function renderVehicleDetail(vehicle) {
         <div>
           <h4>Mantenimiento</h4>
           ${maintenance.slice(0, 6).map(maintenanceMini).join("") || empty("Sin registros.")}
+        </div>
+      </div>
+      <div class="grid-3 detail-extra">
+        <div>
+          <h4>Documentacion</h4>
+          ${documents.map(documentMini).join("") || empty("Sin documentacion importada.")}
+        </div>
+        <div>
+          <h4>Equipamiento</h4>
+          ${equipment.slice(0, 12).map(equipmentMini).join("") || empty("Sin equipamiento importado.")}
+        </div>
+        <div>
+          <h4>Reparaciones historicas</h4>
+          ${maintenance.slice(0, 10).map(maintenanceMini).join("") || empty("Sin reparaciones importadas.")}
         </div>
       </div>
     </section>
@@ -586,6 +605,8 @@ function activeAssignmentView(assignment) {
 
 function vehicleReceiptCard(vehicle, incidents) {
   const active = getActiveAssignmentByVehicle(vehicle.id);
+  const documents = vehicle.documents || [];
+  const equipment = vehicle.equipment || [];
   return `
     <section class="receipt-card">
       <div class="panel-title-row">
@@ -601,6 +622,8 @@ function vehicleReceiptCard(vehicle, incidents) {
         ${summaryItem("Sector", vehicle.sector || "-")}
         ${summaryItem("Ultimo km", vehicle.odometer || "s/d")}
         ${summaryItem("VTV", `${formatDate(vehicle.vtv)} ${stripTags(vtvBadge(vehicle))}`)}
+        ${summaryItem("Documentos", documents.length)}
+        ${summaryItem("Equipamiento", equipment.length)}
       </div>
       ${active ? `<div class="notice danger">Actualmente asignado a ${escapeHtml(active.driver)} desde ${formatDateTime(active.startAt)}.</div>` : ""}
       <h4>Alertas y danos preexistentes</h4>
@@ -722,7 +745,7 @@ async function submitVehicleForm(event) {
   const form = new FormData(event.currentTarget);
   const existing = state.editVehicleId && state.editVehicleId !== "new" ? getVehicle(state.editVehicleId) : null;
   const vehicle = {
-    id: existing?.id || (window.crypto?.randomUUID ? window.crypto.randomUUID() : `V${Date.now()}`),
+    id: existing?.id || (state.dataMode === "supabase" ? "" : (window.crypto?.randomUUID ? window.crypto.randomUUID() : `V${Date.now()}`)),
     domain: String(form.get("domain") || "").trim().toUpperCase(),
     internal: String(form.get("internal") || "").trim(),
     model: String(form.get("model") || "").trim(),
@@ -737,9 +760,10 @@ async function submitVehicleForm(event) {
     isActive: true,
   };
 
-  if (state.dataMode === "supabase") await window.fleetSupabase.saveVehicle(vehicle);
-  runtime.vehicles = existing ? runtime.vehicles.map((item) => item.id === existing.id ? { ...item, ...vehicle } : item) : [vehicle, ...runtime.vehicles];
-  addAudit(existing ? "vehicle_updated" : "vehicle_created", state.user.username, "vehicles", vehicle.id);
+  const savedVehicle = state.dataMode === "supabase" ? await window.fleetSupabase.saveVehicle(vehicle) : vehicle;
+  const nextVehicle = { ...vehicle, ...savedVehicle };
+  runtime.vehicles = existing ? runtime.vehicles.map((item) => item.id === existing.id ? { ...item, ...nextVehicle } : item) : [nextVehicle, ...runtime.vehicles];
+  addAudit(existing ? "vehicle_updated" : "vehicle_created", state.user.username, "vehicles", nextVehicle.id);
   saveRuntime();
   state.editVehicleId = "";
   toast(existing ? "Vehiculo actualizado." : "Vehiculo creado.");
@@ -943,6 +967,28 @@ function getAlerts() {
   runtime.vehicles.forEach((vehicle) => {
     const state = vtvState(vehicle);
     if (state !== "vigente") alerts.push({ type: "Documentacion", level: state === "vencida" ? "critica" : "advertencia", text: `${vehicle.domain}: VTV ${state}`, at: vehicle.vtv || "" });
+    (vehicle.documents || []).forEach((document) => {
+      const state = expiryState(document.expiresAt);
+      if (document.expiresAt && state !== "vigente") {
+        alerts.push({
+          type: "Documentacion",
+          level: state === "vencida" ? "critica" : "advertencia",
+          text: `${vehicle.domain}: ${document.type} ${state}`,
+          at: document.expiresAt,
+        });
+      }
+    });
+    (vehicle.equipment || []).filter((item) => item.expiresAt).forEach((item) => {
+      const state = expiryState(item.expiresAt);
+      if (state !== "vigente") {
+        alerts.push({
+          type: "Equipamiento",
+          level: state === "vencida" ? "critica" : "advertencia",
+          text: `${vehicle.domain}: ${item.name} ${state}`,
+          at: item.expiresAt,
+        });
+      }
+    });
   });
   runtime.maintenance.filter((item) => item.status === "Pendiente").forEach((item) => {
     alerts.push({ type: "Mantenimiento", level: "advertencia", text: `${item.domain}: ${item.detail}`, at: item.createdAt });
@@ -1079,7 +1125,17 @@ function assignmentMini(item) {
 }
 
 function maintenanceMini(item) {
-  return `<div class="mini-record"><strong>${escapeHtml(item.type)}</strong> ${statusTextBadge(item.status)}<br><span class="muted">${escapeHtml(item.detail)}</span></div>`;
+  return `<div class="mini-record"><strong>${escapeHtml(item.type)}</strong> ${statusTextBadge(item.status)}<br><span class="muted">${escapeHtml(item.detail)}</span>${item.enteredAt ? `<br><span class="muted">Fecha: ${formatDate(item.enteredAt)}</span>` : ""}</div>`;
+}
+
+function documentMini(item) {
+  const state = expiryState(item.expiresAt);
+  return `<div class="mini-record"><strong>${escapeHtml(item.type)}</strong> ${item.expiresAt ? expiryBadge(state) : statusTextBadge(item.status || "Sin fecha")}<br><span class="muted">${item.expiresAt ? `Vence: ${formatDate(item.expiresAt)}` : "Sin vencimiento cargado"}${item.number ? ` | ${escapeHtml(item.number)}` : ""}</span>${item.notes ? `<br><span class="muted">${escapeHtml(item.notes)}</span>` : ""}</div>`;
+}
+
+function equipmentMini(item) {
+  const state = expiryState(item.expiresAt);
+  return `<div class="mini-record"><strong>${escapeHtml(item.name)}</strong> ${item.present ? statusTextBadge("Presente") : statusTextBadge("Faltante")} ${item.expiresAt ? expiryBadge(state) : ""}<br><span class="muted">${item.expiresAt ? `Vence: ${formatDate(item.expiresAt)}` : "Sin vencimiento"}${item.notes ? ` | ${escapeHtml(item.notes)}` : ""}</span></div>`;
 }
 
 function miniTable(rows, headers) {
@@ -1134,9 +1190,18 @@ function incidentStageLabel(stage) {
 }
 
 function vtvState(vehicle) {
-  if (!vehicle.vtv) return "sin fecha";
+  return expiryState(vehicle.vtv);
+}
+
+function vtvBadge(vehicle) {
+  const state = vtvState(vehicle);
+  return expiryBadge(state);
+}
+
+function expiryState(value) {
+  if (!value) return "sin fecha";
   const today = new Date();
-  const date = new Date(vehicle.vtv);
+  const date = new Date(value);
   const soon = new Date();
   soon.setDate(today.getDate() + 45);
   if (date < today) return "vencida";
@@ -1144,8 +1209,7 @@ function vtvState(vehicle) {
   return "vigente";
 }
 
-function vtvBadge(vehicle) {
-  const state = vtvState(vehicle);
+function expiryBadge(state) {
   if (state === "vencida") return `<span class="badge danger">Vencida</span>`;
   if (state === "proxima") return `<span class="badge warn">Proxima</span>`;
   if (state === "sin fecha") return `<span class="badge warn">Sin fecha</span>`;
