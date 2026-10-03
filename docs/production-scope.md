@@ -109,7 +109,7 @@ Esta etapa convierte el prototipo estatico en una aplicacion productiva con back
    - Evidencia de inspecciones.
 
 15. GPS futuro
-   - No implementar en primera version productiva si EDESUR no provee API.
+   - No implementar en primera version productiva si la empresa no provee API.
    - Dejar modulo opcional `LocationProvider`.
    - Asociar localizacion al vehiculo/dispositivo corporativo, no al telefono personal ocultamente.
 

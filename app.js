@@ -1,5 +1,5 @@
 const app = document.getElementById("app");
-const storageKey = "edesur-flota-operacion-v2";
+const storageKey = "gestion-flota-operacion-v2";
 
 const state = {
   user: null,
@@ -28,7 +28,7 @@ const checklistStatuses = [
 
 function loadRuntime() {
   const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  const oldSaved = JSON.parse(localStorage.getItem("edesur-flota-localizador-v1") || "{}");
+  const oldSaved = JSON.parse(localStorage.getItem("gestion-flota-localizador-v1") || "{}");
   const seedAssignments = (seedData.handovers || []).map(migrateHandover);
   const assignments = saved.assignments || (oldSaved.handovers || []).map(migrateHandover);
 
@@ -160,7 +160,7 @@ function reconcileRuntime(data) {
 }
 
 function init() {
-  state.user = JSON.parse(sessionStorage.getItem("edesur-session") || "null");
+  state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
   render();
 }
 
@@ -173,7 +173,7 @@ function render() {
   app.innerHTML = `
     <div class="layout">
       <aside class="sidebar">
-        <div class="brand-mark"><span class="bolt">E</span><span>EDESUR Flota</span></div>
+        <div class="brand-mark"><span class="bolt">F</span><span>Gestion Flota</span></div>
         <nav class="side-nav">
           ${isAdmin ? navButton("dashboard", "Panel") : ""}
           ${isAdmin ? navButton("vehicles", "Vehiculos") : ""}
@@ -198,7 +198,7 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login-shell">
       <section class="brand-panel">
-        <div class="brand-mark"><span class="bolt">E</span><span>EDESUR Flota</span></div>
+        <div class="brand-mark"><span class="bolt">F</span><span>Gestion Flota</span></div>
         <div>
           <h1>Control y trazabilidad vehicular</h1>
           <p>Recepcion, uso, devolucion, kilometraje, danos, checklist y reportes operativos para flota.</p>
@@ -234,7 +234,7 @@ function renderLogin() {
     }
     state.user = user;
     state.view = user.role === "admin" ? "dashboard" : "driver";
-    sessionStorage.setItem("edesur-session", JSON.stringify(user));
+    sessionStorage.setItem("gestion-flota-session", JSON.stringify(user));
     addAudit("login", user.username, "users", user.username);
     render();
   });
@@ -572,7 +572,7 @@ function bindCommon() {
 function handleAction(action, button) {
   if (action === "logout") {
     addAudit("logout", state.user.username, "users", state.user.username);
-    sessionStorage.removeItem("edesur-session");
+    sessionStorage.removeItem("gestion-flota-session");
     state.user = null;
     state.view = "dashboard";
     render();
@@ -959,7 +959,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `reporte-asignaciones-edesur-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `reporte-asignaciones-flota-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

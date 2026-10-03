@@ -1,4 +1,4 @@
--- EDESUR Flota Operacion
+-- Gestion Flota Operacion
 -- Esquema base PostgreSQL/Supabase para version productiva.
 -- Ejecutar en Supabase SQL Editor sobre un proyecto nuevo.
 
