@@ -336,6 +336,8 @@ function renderVehicles() {
   const editingVehicle = state.editVehicleId ? getVehicle(state.editVehicleId) : null;
   return `
     ${topbar("Control de vehiculos", `<button class="btn" data-action="new-vehicle">Nuevo vehiculo</button>${state.dataMode === "demo" ? `<button class="btn secondary" data-action="reset">Restaurar datos base</button>` : `<span class="badge ok">Supabase conectado</span>`}`)}
+    ${state.vehicleId ? renderVehicleDetail(getVehicle(state.vehicleId)) : ""}
+    ${state.editVehicleId === "new" || editingVehicle ? renderVehicleForm(editingVehicle) : ""}
     <div class="panel">
       ${toolbar()}
       <div class="table-wrap">
@@ -345,8 +347,6 @@ function renderVehicles() {
         </table>
       </div>
     </div>
-    ${state.editVehicleId === "new" || editingVehicle ? renderVehicleForm(editingVehicle) : ""}
-    ${state.vehicleId ? renderVehicleDetail(getVehicle(state.vehicleId)) : ""}
   `;
 }
 
@@ -384,7 +384,7 @@ function renderVehicleDetail(vehicle) {
   const equipment = vehicle.equipment || (runtime.equipment || []).filter((item) => item.vehicleId === vehicle.id);
   const fireExtinguisher = equipment.find((item) => normalize(item.name).includes("matafuego"));
   return `
-    <section class="panel detail-panel">
+    <section class="panel detail-panel" id="vehicleDetail">
       <div class="panel-title-row">
         <h3>Ficha ${escapeHtml(vehicle.domain)}</h3>
         <button class="btn ghost" data-action="clear-detail">Cerrar</button>
@@ -706,6 +706,7 @@ async function handleAction(action, button) {
   if (action === "vehicle-detail") {
     state.vehicleId = button.dataset.vehicleId;
     render();
+    requestAnimationFrame(() => document.getElementById("vehicleDetail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
   if (action === "new-vehicle") {
     state.editVehicleId = "new";
