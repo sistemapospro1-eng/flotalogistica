@@ -1,0 +1,24 @@
+# Local/private data
+data.real.local.js
+generate_data.py
+*.local.*
+*.txt
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencies/build output if the project migrates to Next.js later
+node_modules/
+.next/
+out/
+dist/
+build/
+.vercel/
+
+# Environment files
+.env
+.env.*
+!.env.example
