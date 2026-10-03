@@ -66,12 +66,15 @@ create table if not exists employees (
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   employee_id uuid references employees(id),
+  username text,
   role app_role not null default 'driver',
   display_name text not null,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists idx_profiles_username on profiles(username) where username is not null;
 
 create table if not exists vehicles (
   id uuid primary key default gen_random_uuid(),
@@ -103,6 +106,7 @@ create table if not exists vehicle_documents (
   expires_at date,
   status text,
   notes text,
+  storage_path text,
   created_at timestamptz not null default now()
 );
 
@@ -228,6 +232,9 @@ create table if not exists vehicle_photos (
   storage_bucket text not null default 'vehicle-evidence',
   storage_path text not null,
   photo_type text not null,
+  file_name text,
+  mime_type text,
+  file_size integer,
   uploaded_by uuid references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -324,6 +331,85 @@ returns boolean as $$
   select current_app_role() in ('admin', 'super_admin', 'supervisor', 'maintenance', 'auditor');
 $$ language sql stable security definer;
 
+create or replace function protect_closed_assignment_history()
+returns trigger as $$
+begin
+  if old.status = 'closed' and not is_admin_like() then
+    if new.vehicle_id is distinct from old.vehicle_id
+      or new.employee_id is distinct from old.employee_id
+      or new.started_at is distinct from old.started_at
+      or new.ended_at is distinct from old.ended_at
+      or new.odometer_start is distinct from old.odometer_start
+      or new.odometer_end is distinct from old.odometer_end
+      or new.start_notes is distinct from old.start_notes
+      or new.end_notes is distinct from old.end_notes then
+      raise exception 'closed vehicle assignments cannot be modified silently';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists protect_closed_assignment_history_trigger on vehicle_assignments;
+create trigger protect_closed_assignment_history_trigger before update on vehicle_assignments
+for each row execute function protect_closed_assignment_history();
+
+create or replace function write_audit_log()
+returns trigger as $$
+declare
+  row_id uuid;
+begin
+  if tg_op = 'DELETE' then
+    row_id := old.id;
+  else
+    row_id := new.id;
+  end if;
+
+  insert into audit_logs(actor_id, action, entity_name, entity_id, old_data, new_data)
+  values (
+    auth.uid(),
+    lower(tg_op),
+    tg_table_name,
+    row_id,
+    case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) else null end,
+    case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) else null end
+  );
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists audit_employees on employees;
+create trigger audit_employees after insert or update or delete on employees
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_vehicles on vehicles;
+create trigger audit_vehicles after insert or update or delete on vehicles
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_vehicle_documents on vehicle_documents;
+create trigger audit_vehicle_documents after insert or update or delete on vehicle_documents
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_vehicle_equipment on vehicle_equipment;
+create trigger audit_vehicle_equipment after insert or update or delete on vehicle_equipment
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_vehicle_assignments on vehicle_assignments;
+create trigger audit_vehicle_assignments after insert or update or delete on vehicle_assignments
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_vehicle_incidents on vehicle_incidents;
+create trigger audit_vehicle_incidents after insert or update or delete on vehicle_incidents
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_maintenance_records on maintenance_records;
+create trigger audit_maintenance_records after insert or update or delete on maintenance_records
+for each row execute function write_audit_log();
+
 alter table employees enable row level security;
 alter table profiles enable row level security;
 alter table vehicles enable row level security;
@@ -345,13 +431,43 @@ alter table audit_logs enable row level security;
 create policy "profiles read own or admin" on profiles
 for select using (id = auth.uid() or is_readonly_admin_like());
 
+create policy "profiles update own or admin" on profiles
+for update using (id = auth.uid() or is_admin_like()) with check (id = auth.uid() or is_admin_like());
+
 create policy "employees read authenticated" on employees
 for select using (auth.role() = 'authenticated');
+
+create policy "employees write admin" on employees
+for all using (is_admin_like()) with check (is_admin_like());
 
 create policy "vehicles read authenticated" on vehicles
 for select using (auth.role() = 'authenticated');
 
 create policy "vehicles write admin" on vehicles
+for all using (is_admin_like()) with check (is_admin_like());
+
+create policy "vehicle documents read authenticated" on vehicle_documents
+for select using (auth.role() = 'authenticated');
+
+create policy "vehicle documents write authorized" on vehicle_documents
+for all using (current_app_role() in ('admin', 'super_admin', 'maintenance')) with check (current_app_role() in ('admin', 'super_admin', 'maintenance'));
+
+create policy "vehicle equipment read authenticated" on vehicle_equipment
+for select using (auth.role() = 'authenticated');
+
+create policy "vehicle equipment write authorized" on vehicle_equipment
+for all using (current_app_role() in ('admin', 'super_admin', 'maintenance')) with check (current_app_role() in ('admin', 'super_admin', 'maintenance'));
+
+create policy "checklist templates read authenticated" on checklist_templates
+for select using (auth.role() = 'authenticated');
+
+create policy "checklist templates write admin" on checklist_templates
+for all using (is_admin_like()) with check (is_admin_like());
+
+create policy "checklist items read authenticated" on checklist_items
+for select using (auth.role() = 'authenticated');
+
+create policy "checklist items write admin" on checklist_items
 for all using (is_admin_like()) with check (is_admin_like());
 
 create policy "drivers create own assignments" on vehicle_assignments
@@ -393,11 +509,55 @@ for select using (is_readonly_admin_like());
 create policy "maintenance write maintenance or admin" on maintenance_records
 for all using (current_app_role() in ('admin', 'super_admin', 'maintenance')) with check (current_app_role() in ('admin', 'super_admin', 'maintenance'));
 
+create policy "photos read authenticated" on vehicle_photos
+for select using (auth.role() = 'authenticated');
+
+create policy "photos write authenticated" on vehicle_photos
+for insert with check (auth.role() = 'authenticated');
+
 create policy "alerts read authenticated" on alerts
 for select using (auth.role() = 'authenticated');
 
+create policy "locations read authorized" on locations
+for select using (is_readonly_admin_like());
+
+create policy "locations write authorized" on locations
+for insert with check (current_app_role() in ('admin', 'super_admin', 'supervisor', 'maintenance'));
+
+create policy "imports read admin" on import_batches
+for select using (is_admin_like());
+
+create policy "imports write admin" on import_batches
+for all using (is_admin_like()) with check (is_admin_like());
+
 create policy "audit read admin auditor" on audit_logs
 for select using (current_app_role() in ('admin', 'super_admin', 'auditor'));
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'vehicle-evidence',
+  'vehicle-evidence',
+  false,
+  10485760,
+  array['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create policy "vehicle evidence read authenticated" on storage.objects
+for select using (bucket_id = 'vehicle-evidence' and auth.role() = 'authenticated');
+
+create policy "vehicle evidence upload authenticated" on storage.objects
+for insert with check (bucket_id = 'vehicle-evidence' and auth.role() = 'authenticated');
+
+create policy "vehicle evidence update admin maintenance" on storage.objects
+for update using (bucket_id = 'vehicle-evidence' and current_app_role() in ('admin', 'super_admin', 'maintenance'))
+with check (bucket_id = 'vehicle-evidence' and current_app_role() in ('admin', 'super_admin', 'maintenance'));
+
+create policy "vehicle evidence delete super admin" on storage.objects
+for delete using (bucket_id = 'vehicle-evidence' and current_app_role() = 'super_admin');
 
 create index if not exists idx_vehicles_domain on vehicles(domain);
 create index if not exists idx_assignments_vehicle on vehicle_assignments(vehicle_id);
@@ -406,3 +566,11 @@ create index if not exists idx_assignments_status on vehicle_assignments(status)
 create index if not exists idx_incidents_vehicle_status on vehicle_incidents(vehicle_id, status);
 create index if not exists idx_maintenance_vehicle_status on maintenance_records(vehicle_id, status);
 create index if not exists idx_alerts_open on alerts(is_open, severity);
+
+insert into checklist_templates(name, vehicle_type, stage)
+select 'Control inicial general', null, 'start'
+where not exists (select 1 from checklist_templates where name = 'Control inicial general' and stage = 'start');
+
+insert into checklist_templates(name, vehicle_type, stage)
+select 'Control final general', null, 'end'
+where not exists (select 1 from checklist_templates where name = 'Control final general' and stage = 'end');

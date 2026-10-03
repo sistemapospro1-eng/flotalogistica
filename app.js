@@ -7,6 +7,10 @@ const state = {
   query: "",
   area: "Todas",
   vehicleId: "",
+  editVehicleId: "",
+  editDriverId: "",
+  loading: false,
+  dataMode: window.fleetSupabase?.isEnabled() ? "supabase" : "demo",
 };
 
 const checklistTemplate = [
@@ -45,6 +49,7 @@ function loadRuntime() {
 let runtime = loadRuntime();
 
 function saveRuntime() {
+  if (state.dataMode === "supabase") return;
   localStorage.setItem(storageKey, JSON.stringify({
     vehicles: runtime.vehicles.map(({ id, status, odometer, driver, activeAssignmentId, lastReport }) => ({
       id, status, odometer, driver, activeAssignmentId, lastReport,
@@ -160,11 +165,38 @@ function reconcileRuntime(data) {
 }
 
 function init() {
-  state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
-  render();
+  bootstrap();
+}
+
+async function bootstrap() {
+  state.loading = true;
+  renderShellMessage("Cargando aplicacion...");
+  try {
+    if (window.fleetSupabase?.isEnabled()) {
+      state.dataMode = "supabase";
+      const remoteUser = await window.fleetSupabase.currentProfile();
+      state.user = remoteUser || null;
+      sessionStorage.removeItem("gestion-flota-session");
+      if (state.user) {
+        runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
+      }
+    } else {
+      state.dataMode = "demo";
+      state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
+    }
+  } catch (error) {
+    console.error(error);
+    state.dataMode = "demo";
+    state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
+    toast("No se pudo conectar Supabase. Se abrio en modo demo.");
+  } finally {
+    state.loading = false;
+    render();
+  }
 }
 
 function render() {
+  if (state.loading) return renderShellMessage("Cargando aplicacion...");
   if (!state.user) return renderLogin();
 
   const isAdmin = state.user.role === "admin";
@@ -195,6 +227,7 @@ function render() {
 }
 
 function renderLogin() {
+  const supabaseEnabled = state.dataMode === "supabase";
   app.innerHTML = `
     <div class="login-shell">
       <section class="brand-panel">
@@ -209,38 +242,46 @@ function renderLogin() {
           <h2>Ingresar</h2>
           <p class="muted">Primera version sin GPS. El foco es responsabilidad e historial de uso.</p>
           <form class="form-grid" id="loginForm">
-            <label class="field"><span>Usuario</span><input name="username" autocomplete="username" value="admin"></label>
-            <label class="field"><span>Contrasena</span><input name="password" type="password" autocomplete="current-password" value="admin123"></label>
+            <label class="field"><span>${supabaseEnabled ? "Email" : "Usuario"}</span><input name="username" autocomplete="username" value="${supabaseEnabled ? "" : "admin"}"></label>
+            <label class="field"><span>Contrasena</span><input name="password" type="password" autocomplete="current-password" value="${supabaseEnabled ? "" : "admin123"}"></label>
             <div class="error" id="loginError"></div>
             <button class="btn" type="submit">Ingresar</button>
           </form>
           <div class="hint">
-            Admin: <strong>admin</strong> / <strong>admin123</strong><br>
-            Conductor demo: <strong>chofer1</strong> / <strong>flota123</strong><br>
-            Personal importado: legajo / ultimos 4 digitos del CUIL.
+            ${supabaseEnabled
+              ? "Modo produccion: usuarios reales creados en Supabase Auth."
+              : "Admin: <strong>admin</strong> / <strong>admin123</strong><br>Conductor demo: <strong>chofer1</strong> / <strong>flota123</strong><br>Personal importado: legajo / ultimos 4 digitos del CUIL."}
           </div>
         </div>
       </section>
     </div>
   `;
 
-  document.getElementById("loginForm").addEventListener("submit", (event) => {
+  document.getElementById("loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const user = authenticate(String(form.get("username") || "").trim(), String(form.get("password") || "").trim());
-    if (!user) {
-      document.getElementById("loginError").textContent = "Usuario o contrasena incorrectos.";
-      return;
+    try {
+      const user = await authenticate(String(form.get("username") || "").trim(), String(form.get("password") || "").trim());
+      if (!user) {
+        document.getElementById("loginError").textContent = "Usuario o contrasena incorrectos.";
+        return;
+      }
+      state.user = user;
+      state.view = user.role === "admin" ? "dashboard" : "driver";
+      if (state.dataMode === "demo") sessionStorage.setItem("gestion-flota-session", JSON.stringify(user));
+      if (state.dataMode === "supabase") runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
+      addAudit("login", user.username, "users", user.username);
+      render();
+    } catch (error) {
+      document.getElementById("loginError").textContent = error.message || "No se pudo iniciar sesion.";
     }
-    state.user = user;
-    state.view = user.role === "admin" ? "dashboard" : "driver";
-    sessionStorage.setItem("gestion-flota-session", JSON.stringify(user));
-    addAudit("login", user.username, "users", user.username);
-    render();
   });
 }
 
-function authenticate(username, password) {
+async function authenticate(username, password) {
+  if (state.dataMode === "supabase") {
+    return window.fleetSupabase.signIn(username, password);
+  }
   if (username === "admin" && password === "admin123") {
     return { role: "admin", name: "Administrador de flota", username, employeeId: "admin" };
   }
@@ -292,8 +333,9 @@ function renderDashboard() {
 
 function renderVehicles() {
   const vehicles = getFilteredVehicles();
+  const editingVehicle = state.editVehicleId ? getVehicle(state.editVehicleId) : null;
   return `
-    ${topbar("Control de vehiculos", `<button class="btn secondary" data-action="reset">Restaurar datos base</button>`)}
+    ${topbar("Control de vehiculos", `<button class="btn" data-action="new-vehicle">Nuevo vehiculo</button>${state.dataMode === "demo" ? `<button class="btn secondary" data-action="reset">Restaurar datos base</button>` : `<span class="badge ok">Supabase conectado</span>`}`)}
     <div class="panel">
       ${toolbar()}
       <div class="table-wrap">
@@ -303,7 +345,33 @@ function renderVehicles() {
         </table>
       </div>
     </div>
+    ${state.editVehicleId === "new" || editingVehicle ? renderVehicleForm(editingVehicle) : ""}
     ${state.vehicleId ? renderVehicleDetail(getVehicle(state.vehicleId)) : ""}
+  `;
+}
+
+function renderVehicleForm(vehicle) {
+  const isNew = !vehicle;
+  return `
+    <form class="panel form-grid" id="vehicleForm">
+      <div class="panel-title-row">
+        <h3>${isNew ? "Alta de vehiculo" : `Editar ${escapeHtml(vehicle.domain)}`}</h3>
+        <button class="btn ghost" type="button" data-action="cancel-vehicle-form">Cerrar</button>
+      </div>
+      <div class="grid-2 compact">
+        <label class="field"><span>Patente</span><input name="domain" required value="${escapeAttr(vehicle?.domain || "")}"></label>
+        <label class="field"><span>Interno</span><input name="internal" value="${escapeAttr(vehicle?.internal || "")}"></label>
+        <label class="field"><span>Modelo</span><input name="model" value="${escapeAttr(vehicle?.model || "")}"></label>
+        <label class="field"><span>Tipo</span><input name="type" value="${escapeAttr(vehicle?.type || "")}" placeholder="Camioneta, camion, auto"></label>
+        <label class="field"><span>Area</span><input name="area" value="${escapeAttr(vehicle?.area || "")}"></label>
+        <label class="field"><span>Sector</span><input name="sector" value="${escapeAttr(vehicle?.sector || "")}"></label>
+        <label class="field"><span>Kilometraje</span><input name="odometer" type="number" min="0" value="${escapeAttr(vehicle?.odometer || 0)}"></label>
+        <label class="field"><span>Estado</span><select name="status">
+          ${["available", "active", "alert", "idle"].map((status) => `<option value="${status}" ${vehicle?.status === status ? "selected" : ""}>${stripTags(statusBadge(status))}</option>`).join("")}
+        </select></label>
+      </div>
+      <button class="btn" type="submit">${isNew ? "Crear vehiculo" : "Guardar cambios"}</button>
+    </form>
   `;
 }
 
@@ -351,17 +419,38 @@ function renderDrivers() {
   const rows = runtime.people
     .filter((person) => !query || normalize([person.employeeId, person.name, person.area, person.role].join(" ")).includes(query))
     .slice(0, 120);
+  const editingDriver = state.editDriverId ? runtime.people.find((person) => person.employeeId === state.editDriverId || person.id === state.editDriverId) : null;
   return `
-    ${topbar("Control de conductores")}
+    ${topbar("Control de conductores", `<button class="btn" data-action="new-driver">Nuevo conductor</button>`)}
     <div class="panel">
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Legajo, nombre, area, cargo"></label></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Legajo</th><th>Nombre</th><th>Area</th><th>Cargo</th><th>Usos</th><th>Actual</th></tr></thead>
+          <thead><tr><th>Legajo</th><th>Nombre</th><th>Area</th><th>Cargo</th><th>Usos</th><th>Actual</th><th>Accion</th></tr></thead>
           <tbody>${rows.map(driverRow).join("")}</tbody>
         </table>
       </div>
     </div>
+    ${state.editDriverId === "new" || editingDriver ? renderDriverForm(editingDriver) : ""}
+  `;
+}
+
+function renderDriverForm(person) {
+  const isNew = !person;
+  return `
+    <form class="panel form-grid" id="driverForm">
+      <div class="panel-title-row">
+        <h3>${isNew ? "Alta de conductor" : `Editar ${escapeHtml(person.name)}`}</h3>
+        <button class="btn ghost" type="button" data-action="cancel-driver-form">Cerrar</button>
+      </div>
+      <div class="grid-2 compact">
+        <label class="field"><span>Legajo</span><input name="employeeId" required value="${escapeAttr(person?.employeeId || "")}"></label>
+        <label class="field"><span>Nombre</span><input name="name" required value="${escapeAttr(person?.name || "")}"></label>
+        <label class="field"><span>Area</span><input name="area" value="${escapeAttr(person?.area || "")}"></label>
+        <label class="field"><span>Cargo</span><input name="role" value="${escapeAttr(person?.role || "")}"></label>
+      </div>
+      <button class="btn" type="submit">${isNew ? "Crear conductor" : "Guardar cambios"}</button>
+    </form>
   `;
 }
 
@@ -567,11 +656,18 @@ function bindCommon() {
 
   const closeForm = document.getElementById("closeForm");
   if (closeForm) closeForm.addEventListener("submit", submitCloseAssignment);
+
+  const vehicleForm = document.getElementById("vehicleForm");
+  if (vehicleForm) vehicleForm.addEventListener("submit", submitVehicleForm);
+
+  const driverForm = document.getElementById("driverForm");
+  if (driverForm) driverForm.addEventListener("submit", submitDriverForm);
 }
 
-function handleAction(action, button) {
+async function handleAction(action, button) {
   if (action === "logout") {
     addAudit("logout", state.user.username, "users", state.user.username);
+    if (state.dataMode === "supabase") await window.fleetSupabase.signOut();
     sessionStorage.removeItem("gestion-flota-session");
     state.user = null;
     state.view = "dashboard";
@@ -588,13 +684,111 @@ function handleAction(action, button) {
     state.vehicleId = button.dataset.vehicleId;
     render();
   }
+  if (action === "new-vehicle") {
+    state.editVehicleId = "new";
+    render();
+  }
+  if (action === "edit-vehicle") {
+    state.editVehicleId = button.dataset.vehicleId;
+    render();
+  }
+  if (action === "deactivate-vehicle") {
+    await deactivateVehicle(button.dataset.vehicleId);
+  }
+  if (action === "cancel-vehicle-form") {
+    state.editVehicleId = "";
+    render();
+  }
+  if (action === "new-driver") {
+    state.editDriverId = "new";
+    render();
+  }
+  if (action === "edit-driver") {
+    state.editDriverId = button.dataset.driverId;
+    render();
+  }
+  if (action === "cancel-driver-form") {
+    state.editDriverId = "";
+    render();
+  }
   if (action === "clear-detail") {
     state.vehicleId = "";
     render();
   }
 }
 
-function submitStartAssignment(event) {
+async function submitVehicleForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const existing = state.editVehicleId && state.editVehicleId !== "new" ? getVehicle(state.editVehicleId) : null;
+  const vehicle = {
+    id: existing?.id || (window.crypto?.randomUUID ? window.crypto.randomUUID() : `V${Date.now()}`),
+    domain: String(form.get("domain") || "").trim().toUpperCase(),
+    internal: String(form.get("internal") || "").trim(),
+    model: String(form.get("model") || "").trim(),
+    type: String(form.get("type") || "").trim(),
+    company: existing?.company || "",
+    area: String(form.get("area") || "").trim(),
+    sector: String(form.get("sector") || "").trim(),
+    odometer: Number(form.get("odometer") || 0),
+    status: String(form.get("status") || "available"),
+    activeAssignmentId: existing?.activeAssignmentId || "",
+    driver: existing?.driver || "",
+    isActive: true,
+  };
+
+  if (state.dataMode === "supabase") await window.fleetSupabase.saveVehicle(vehicle);
+  runtime.vehicles = existing ? runtime.vehicles.map((item) => item.id === existing.id ? { ...item, ...vehicle } : item) : [vehicle, ...runtime.vehicles];
+  addAudit(existing ? "vehicle_updated" : "vehicle_created", state.user.username, "vehicles", vehicle.id);
+  saveRuntime();
+  state.editVehicleId = "";
+  toast(existing ? "Vehiculo actualizado." : "Vehiculo creado.");
+  render();
+}
+
+async function deactivateVehicle(vehicleId) {
+  const vehicle = getVehicle(vehicleId);
+  if (!vehicle || vehicle.activeAssignmentId) {
+    toast("No se puede dar de baja un vehiculo en uso.");
+    return;
+  }
+  if (state.dataMode === "supabase") await window.fleetSupabase.deactivateVehicle(vehicleId);
+  runtime.vehicles = runtime.vehicles.filter((item) => item.id !== vehicleId);
+  addAudit("vehicle_deactivated", state.user.username, "vehicles", vehicleId);
+  saveRuntime();
+  toast("Vehiculo dado de baja logica.");
+  render();
+}
+
+async function submitDriverForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const existing = state.editDriverId && state.editDriverId !== "new"
+    ? runtime.people.find((person) => person.employeeId === state.editDriverId || person.id === state.editDriverId)
+    : null;
+  const person = {
+    id: existing?.id,
+    employeeId: String(form.get("employeeId") || "").trim(),
+    employeeUuid: existing?.employeeUuid,
+    name: String(form.get("name") || "").trim(),
+    area: String(form.get("area") || "").trim(),
+    role: String(form.get("role") || "").trim(),
+    isActive: true,
+  };
+
+  const saved = state.dataMode === "supabase" ? await window.fleetSupabase.saveEmployee(person) : person;
+  const nextPerson = { ...person, ...saved };
+  runtime.people = existing
+    ? runtime.people.map((item) => (item.employeeId === existing.employeeId || item.id === existing.id) ? { ...item, ...nextPerson } : item)
+    : [nextPerson, ...runtime.people];
+  addAudit(existing ? "driver_updated" : "driver_created", state.user.username, "employees", nextPerson.employeeUuid || nextPerson.employeeId);
+  saveRuntime();
+  state.editDriverId = "";
+  toast(existing ? "Conductor actualizado." : "Conductor creado.");
+  render();
+}
+
+async function submitStartAssignment(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const vehicle = getVehicle(form.get("vehicleId"));
@@ -607,11 +801,13 @@ function submitStartAssignment(event) {
   const now = new Date().toISOString();
 
   const assignment = {
-    id: `A${Date.now()}`,
+    id: state.dataMode === "supabase" && window.crypto?.randomUUID ? window.crypto.randomUUID() : `A${Date.now()}`,
     vehicleId: vehicle.id,
     domain: vehicle.domain,
     employeeId: state.user.employeeId,
+    employeeUuid: state.user.employeeUuid,
     driver: state.user.name,
+    startedBy: state.user.profileId,
     startAt: now,
     endAt: null,
     odometerStart,
@@ -630,9 +826,12 @@ function submitStartAssignment(event) {
   };
 
   runtime.assignments.push(assignment);
+  let incident = null;
   if (severity !== "correcto" || assignment.startNotes.trim()) {
-    createIncident(vehicle, assignment, "detected_at_start", "Novedad detectada al recibir", assignment.startNotes || "Checklist inicial con observaciones.", severity);
+    incident = createIncident(vehicle, assignment, "detected_at_start", "Novedad detectada al recibir", assignment.startNotes || "Checklist inicial con observaciones.", severity);
   }
+  if (state.dataMode === "supabase") await window.fleetSupabase.saveAssignmentStarted(assignment, vehicle, severity);
+  if (state.dataMode === "supabase" && incident) await window.fleetSupabase.saveIncident(incident);
   updateVehicle(vehicle.id, {
     status: severity === "critica" ? "alert" : "active",
     driver: state.user.name,
@@ -646,7 +845,7 @@ function submitStartAssignment(event) {
   render();
 }
 
-function submitCloseAssignment(event) {
+async function submitCloseAssignment(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const assignment = getActiveAssignmentForUser();
@@ -664,12 +863,15 @@ function submitCloseAssignment(event) {
   assignment.endChecklist = checklist;
   assignment.endNotes = String(form.get("endNotes") || "");
   assignment.status = "closed";
+  assignment.closedBy = state.user.profileId;
 
   if (severity !== "correcto" || assignment.endNotes.trim()) {
-    createIncident(vehicle, assignment, "new_at_return", "Dano o novedad al devolver", assignment.endNotes || "Checklist final con observaciones.", severity);
+    const incident = createIncident(vehicle, assignment, "new_at_return", "Dano o novedad al devolver", assignment.endNotes || "Checklist final con observaciones.", severity);
+    if (state.dataMode === "supabase") await window.fleetSupabase.saveIncident(incident);
   }
 
   const hasOpenIncidents = getOpenIncidents(vehicle.id).length > 0;
+  if (state.dataMode === "supabase") await window.fleetSupabase.saveAssignmentClosed(assignment, vehicle, hasOpenIncidents || severity !== "correcto");
   updateVehicle(vehicle.id, {
     status: hasOpenIncidents || severity !== "correcto" ? "alert" : "available",
     driver: "",
@@ -694,12 +896,13 @@ function readChecklist(form, prefix) {
 }
 
 function createIncident(vehicle, assignment, stage, title, description, severity) {
-  runtime.incidents.push({
-    id: `I${Date.now()}${runtime.incidents.length}`,
+  const incident = {
+    id: state.dataMode === "supabase" && window.crypto?.randomUUID ? window.crypto.randomUUID() : `I${Date.now()}${runtime.incidents.length}`,
     vehicleId: vehicle.id,
     domain: vehicle.domain,
     assignmentId: assignment.id,
     reportedBy: assignment.driver,
+    reportedById: state.user?.profileId,
     reportedAt: new Date().toISOString(),
     stage,
     title,
@@ -707,7 +910,9 @@ function createIncident(vehicle, assignment, stage, title, description, severity
     status: "open",
     severity,
     source: "user",
-  });
+  };
+  runtime.incidents.push(incident);
+  return incident;
 }
 
 function getFilteredVehicles() {
@@ -777,7 +982,8 @@ function checklistSeverity(checklist) {
 }
 
 function topbar(title, actions = "") {
-  return `<header class="topbar"><div><h2>${title}</h2><p class="muted">Primera version operativa sin GPS. La localizacion queda como modulo opcional futuro.</p></div><div class="top-actions">${actions}</div></header>`;
+  const mode = state.dataMode === "supabase" ? `<span class="badge ok">Produccion Supabase</span>` : `<span class="badge warn">Demo local</span>`;
+  return `<header class="topbar"><div><h2>${title}</h2><p class="muted">Primera version operativa sin GPS. La localizacion queda como modulo opcional futuro. ${mode}</p></div><div class="top-actions">${actions}</div></header>`;
 }
 
 function navButton(view, label) {
@@ -822,7 +1028,7 @@ function vehicleRow(vehicle) {
       <td>${active ? `${escapeHtml(active.driver)}<br><span class="muted">${formatDateTime(active.startAt)}</span>` : "<span class=\"muted\">Sin conductor</span>"}</td>
       <td>${vehicle.odometer || "s/d"}</td>
       <td>${alertCount ? `<span class="badge danger">${alertCount}</span>` : `<span class="badge ok">0</span>`}</td>
-      <td><button class="btn secondary" data-action="vehicle-detail" data-vehicle-id="${vehicle.id}">Ver ficha</button></td>
+      <td class="row-actions"><button class="btn secondary" data-action="vehicle-detail" data-vehicle-id="${vehicle.id}">Ver ficha</button><button class="btn ghost" data-action="edit-vehicle" data-vehicle-id="${vehicle.id}">Editar</button><button class="btn ghost" data-action="deactivate-vehicle" data-vehicle-id="${vehicle.id}">Baja</button></td>
     </tr>
   `;
 }
@@ -838,6 +1044,7 @@ function driverRow(person) {
       <td>${escapeHtml(person.role || "-")}</td>
       <td>${assignments.length}</td>
       <td>${active ? `${escapeHtml(active.domain)} desde ${formatDateTime(active.startAt)}` : "<span class=\"muted\">Sin vehiculo</span>"}</td>
+      <td><button class="btn ghost" data-action="edit-driver" data-driver-id="${escapeAttr(person.employeeId || person.id)}">Editar</button></td>
     </tr>
   `;
 }
@@ -1030,6 +1237,10 @@ function toast(message) {
   node.textContent = message;
   document.body.appendChild(node);
   setTimeout(() => node.remove(), 2500);
+}
+
+function renderShellMessage(message) {
+  app.innerHTML = `<div class="login-shell"><section class="login-panel"><div class="login-card"><h2>${escapeHtml(message)}</h2><p class="muted">Gestion Flota Operacion</p></div></section></div>`;
 }
 
 init();
