@@ -845,11 +845,21 @@ function photoMini(item) {
 function renderUsers() {
   const roles = ["driver", "admin", "supervisor", "maintenance", "auditor", "super_admin"];
   const query = normalize(state.query);
+  const linkedEmployeeIds = new Set((runtime.profiles || []).map((profile) => profile.employeeId).filter(Boolean));
+  const pendingDriverUsers = (runtime.people || []).filter((person) => person.isActive !== false && !linkedEmployeeIds.has(person.employeeUuid || person.id));
   const rows = (runtime.profiles || [])
     .filter((profile) => !query || normalize([profile.displayName, profile.username, profile.employeeNumber, profile.employeeName, profile.role].join(" ")).includes(query));
   return `
     ${topbar("Usuarios y roles")}
     <div class="panel">
+      <div class="user-bulk-panel">
+        <div>
+          <h3>Crear usuarios choferes</h3>
+          <p class="muted">Pendientes: <strong>${pendingDriverUsers.length}</strong>. Se crean con email tecnico por legajo y rol conductor.</p>
+        </div>
+        <label class="field user-password-field"><span>Contraseña inicial</span><input id="bulkDriverPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres"></label>
+        <button class="btn" data-action="bulk-create-drivers" ${state.dataMode !== "supabase" || !pendingDriverUsers.length ? "disabled" : ""}>Crear pendientes</button>
+      </div>
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Nombre, usuario, legajo o rol"></label></div>
       <div class="table-wrap">
         <table>
@@ -1090,6 +1100,7 @@ async function handleAction(action, button) {
   if (action === "export-excel") exportExcel();
   if (action === "export-pdf") exportPdf();
   if (action === "save-profile") await submitProfileForm(button.dataset.profileId);
+  if (action === "bulk-create-drivers") await createDriverUsersBulk();
   if (action === "reset") {
     localStorage.removeItem(storageKey);
     runtime = loadRuntime();
@@ -1303,6 +1314,31 @@ async function submitProfileForm(profileId) {
     render();
   } catch (error) {
     toast(error.message || "No se pudo actualizar el usuario.");
+  }
+}
+
+async function createDriverUsersBulk() {
+  if (state.dataMode !== "supabase") {
+    toast("Esta funcion requiere Supabase.");
+    return;
+  }
+  const password = String(document.getElementById("bulkDriverPassword")?.value || "");
+  if (password.length < 8) {
+    toast("La contraseña inicial debe tener al menos 8 caracteres.");
+    return;
+  }
+  try {
+    const result = await window.fleetSupabase.createDriverUsers({ defaultPassword: password });
+    runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
+    const created = result?.created?.length || 0;
+    const linked = result?.linked?.length || 0;
+    const existing = result?.existing?.length || 0;
+    const skipped = result?.skipped?.length || 0;
+    const errors = result?.errors?.length || 0;
+    toast(`Usuarios: ${created} creados, ${linked} vinculados, ${existing} existentes, ${skipped} omitidos, ${errors} errores.`);
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudieron crear los usuarios.");
   }
 }
 

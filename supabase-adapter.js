@@ -545,6 +545,15 @@
     return mapProfile(data);
   }
 
+  async function createDriverUsers(payload) {
+    if (!enabled) return { created: [], linked: [], existing: [], skipped: [], errors: [] };
+    const { data, error } = await client.functions.invoke("create-driver-users", {
+      body: payload,
+    });
+    if (error) throw error;
+    return data;
+  }
+
   async function saveChecklistItem(item) {
     if (!enabled) return item;
     const payload = {
@@ -604,6 +613,7 @@
     createEvidenceUrl,
     updateProfileRole,
     updateProfile,
+    createDriverUsers,
     saveChecklistItem,
   };
 })();
