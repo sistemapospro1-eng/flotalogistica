@@ -73,6 +73,18 @@ button {
   line-height: 1.45;
 }
 
+.brand-credit {
+  display: inline-block;
+  margin-top: 22px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.92);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
 .brand-mark {
   display: inline-flex;
   align-items: center;
@@ -245,6 +257,19 @@ button {
   border-top: 1px solid rgba(255,255,255,.16);
   display: grid;
   gap: 10px;
+}
+
+.author-credit {
+  color: #9fb3bf;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: .06em;
+}
+
+.author-credit.light {
+  margin-top: 16px;
+  color: var(--muted);
 }
 
 .content {

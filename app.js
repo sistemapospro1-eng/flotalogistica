@@ -1,5 +1,6 @@
 const app = document.getElementById("app");
 const storageKey = "gestion-flota-operacion-v2";
+const authorCredit = "PROGRAMADORA Y DESARROLO VANINA CABRERA";
 
 const state = {
   user: null,
@@ -250,6 +251,7 @@ function render() {
           ${navButton("driver", isAdmin ? "Modo conductor" : "Mi turno")}
         </nav>
         <div class="user-box">
+          <div class="author-credit">${escapeHtml(authorCredit)}</div>
           <div><strong>${escapeHtml(state.user.name)}</strong><br><span class="muted">${isAdmin ? roleLabel(appRole) : "Conductor"}</span></div>
           <button class="btn secondary" data-action="show-password-form">Cambiar clave</button>
           <button class="btn secondary" data-action="logout">Cerrar sesion</button>
@@ -270,6 +272,7 @@ function renderLogin() {
         <div>
           <h1>Control y trazabilidad vehicular</h1>
           <p>Recepcion, uso, devolucion, kilometraje, danos, checklist y reportes operativos para flota.</p>
+          <div class="brand-credit">${escapeHtml(authorCredit)}</div>
         </div>
       </section>
       <section class="login-panel">
@@ -2572,7 +2575,7 @@ function toast(message) {
 }
 
 function renderShellMessage(message) {
-  app.innerHTML = `<div class="login-shell"><section class="login-panel"><div class="login-card"><h2>${escapeHtml(message)}</h2><p class="muted">Gestion Flota Operacion</p></div></section></div>`;
+  app.innerHTML = `<div class="login-shell"><section class="login-panel"><div class="login-card"><h2>${escapeHtml(message)}</h2><p class="muted">Gestion Flota Operacion</p><p class="author-credit light">${escapeHtml(authorCredit)}</p></div></section></div>`;
 }
 
 init();
