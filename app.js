@@ -607,7 +607,7 @@ function renderReports() {
   const totalKm = assignments.reduce((sum, item) => sum + Number(item.distance || 0), 0);
   const openDamages = getFilteredIncidentsForReports().length;
   return `
-    ${topbar("Reportes", `<div class="topbar-actions"><button class="btn secondary" data-action="export-excel">Exportar Excel</button><button class="btn" data-action="export">Exportar CSV</button></div>`)}
+    ${topbar("Reportes", `<div class="topbar-actions"><button class="btn secondary" data-action="export-pdf">Exportar PDF</button><button class="btn secondary" data-action="export-excel">Exportar Excel</button><button class="btn" data-action="export">Exportar CSV</button></div>`)}
     ${reportFilters()}
     <section class="grid-3">
       <div class="panel"><h3>Usos registrados</h3><strong class="big">${assignments.length}</strong><p class="muted">Asignaciones historicas.</p></div>
@@ -1030,6 +1030,7 @@ async function handleAction(action, button) {
   }
   if (action === "export") exportCsv();
   if (action === "export-excel") exportExcel();
+  if (action === "export-pdf") exportPdf();
   if (action === "reset") {
     localStorage.removeItem(storageKey);
     runtime = loadRuntime();
@@ -2008,6 +2009,126 @@ function reportWorkbookData() {
       Estado: item.status,
     })),
   };
+}
+
+function exportPdf() {
+  const jsPDF = window.jspdf?.jsPDF;
+  if (!jsPDF) {
+    toast("No se cargo la libreria PDF. Actualiza la pagina e intenta nuevamente.");
+    return;
+  }
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const page = { width: doc.internal.pageSize.getWidth(), height: doc.internal.pageSize.getHeight(), margin: 42 };
+  let y = page.margin;
+
+  const assignments = getReportAssignments();
+  const vehicles = getReportVehicles();
+  const documents = getReportDocuments();
+  const equipment = getReportEquipment();
+  const maintenance = getReportMaintenance();
+  const totalKm = assignments.reduce((sum, item) => sum + Number(item.distance || 0), 0);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Reporte de flota", page.margin, y);
+  y += 24;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Generado: ${formatDateTime(new Date().toISOString())}`, page.margin, y);
+  y += 16;
+  doc.text(`Filtros: ${reportFilterSummary()}`, page.margin, y, { maxWidth: page.width - page.margin * 2 });
+  y += 30;
+
+  y = pdfSectionTitle(doc, "Resumen", y, page);
+  y = pdfKeyValues(doc, [
+    ["Usos registrados", assignments.length],
+    ["Kilometros cerrados", totalKm],
+    ["Vehiculos filtrados", vehicles.length],
+    ["Documentacion critica", documents.length],
+    ["Equipamiento critico", equipment.length],
+    ["Reparaciones", maintenance.length],
+  ], y, page);
+
+  y = pdfSectionTitle(doc, "Documentacion a revisar", y, page);
+  y = pdfSimpleTable(doc, ["Patente", "Tipo", "Vence", "Estado"], documents.slice(0, 20).map((item) => {
+    const vehicle = getVehicle(item.vehicleId) || {};
+    return [vehicle.domain || "-", item.type, formatDate(item.expiresAt), expiryState(item.expiresAt)];
+  }), y, page);
+
+  y = pdfSectionTitle(doc, "Equipamiento y matafuegos", y, page);
+  y = pdfSimpleTable(doc, ["Patente", "Elemento", "Vence", "Estado"], equipment.slice(0, 20).map((item) => {
+    const vehicle = getVehicle(item.vehicleId) || {};
+    return [vehicle.domain || "-", item.name, formatDate(item.expiresAt), item.present === false ? "faltante" : expiryState(item.expiresAt)];
+  }), y, page);
+
+  y = pdfSectionTitle(doc, "Reparaciones importadas", y, page);
+  pdfSimpleTable(doc, ["Fecha", "Patente", "Tipo", "Estado"], maintenance.slice(0, 25).map((item) => [
+    formatDate(item.enteredAt || item.createdAt),
+    item.domain,
+    item.type,
+    item.status,
+  ]), y, page);
+
+  doc.save(`reporte-flota-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+function reportFilterSummary() {
+  return [
+    state.query ? `busqueda "${state.query}"` : "sin busqueda",
+    state.reportFrom ? `desde ${state.reportFrom}` : "sin desde",
+    state.reportTo ? `hasta ${state.reportTo}` : "sin hasta",
+    `estado ${state.reportStatus}`,
+    `area ${state.area}`,
+  ].join(" | ");
+}
+
+function pdfSectionTitle(doc, title, y, page) {
+  y = pdfEnsureSpace(doc, y, 36, page);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text(title, page.margin, y);
+  return y + 18;
+}
+
+function pdfKeyValues(doc, rows, y, page) {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  rows.forEach(([label, value]) => {
+    y = pdfEnsureSpace(doc, y, 18, page);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${label}:`, page.margin, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(value), page.margin + 150, y);
+    y += 16;
+  });
+  return y + 8;
+}
+
+function pdfSimpleTable(doc, headers, rows, y, page) {
+  const usableWidth = page.width - page.margin * 2;
+  const colWidth = usableWidth / headers.length;
+  doc.setFontSize(9);
+  y = pdfEnsureSpace(doc, y, 34, page);
+  doc.setFont("helvetica", "bold");
+  headers.forEach((header, index) => doc.text(header, page.margin + index * colWidth, y));
+  y += 12;
+  doc.setFont("helvetica", "normal");
+  const data = rows.length ? rows : [["Sin resultados", "", "", ""]];
+  data.forEach((row) => {
+    y = pdfEnsureSpace(doc, y, 18, page);
+    row.slice(0, headers.length).forEach((cell, index) => {
+      const text = doc.splitTextToSize(String(cell ?? ""), colWidth - 8).slice(0, 2);
+      doc.text(text, page.margin + index * colWidth, y);
+    });
+    y += 18;
+  });
+  return y + 8;
+}
+
+function pdfEnsureSpace(doc, y, needed, page) {
+  if (y + needed <= page.height - page.margin) return y;
+  doc.addPage();
+  return page.margin;
 }
 
 function groupCount(items, key) {
