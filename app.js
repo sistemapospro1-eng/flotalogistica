@@ -54,6 +54,8 @@ function loadRuntime() {
     assignments: assignments.length ? assignments : seedAssignments,
     incidents: saved.incidents || buildSeedIncidents(seedAssignments),
     maintenance: saved.maintenance || buildSeedMaintenance(seedData.vehicles || []),
+    documents: saved.documents || [],
+    equipment: saved.equipment || [],
     profiles: saved.profiles || [],
     auditLogs: saved.auditLogs || [],
     checklistTemplates: saved.checklistTemplates || [],
@@ -72,6 +74,8 @@ function saveRuntime() {
     assignments: runtime.assignments,
     incidents: runtime.incidents,
     maintenance: runtime.maintenance,
+    documents: runtime.documents,
+    equipment: runtime.equipment,
     auditLogs: runtime.auditLogs,
     checklistTemplates: runtime.checklistTemplates,
     checklistItems: runtime.checklistItems,
@@ -435,7 +439,7 @@ function renderVehicleDetail(vehicle) {
         ${detailTab("history", `Historial ${assignments.length}`)}
         ${detailTab("damages", `Danos ${incidents.length}`)}
       </div>
-      ${renderVehicleDetailTab({ assignments, incidents, maintenance, documents, equipment })}
+      ${renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment })}
     </section>
   `;
 }
@@ -444,12 +448,28 @@ function detailTab(tab, label) {
   return `<button class="tab-btn ${state.vehicleDetailTab === tab ? "active" : ""}" data-action="detail-tab" data-tab="${tab}">${escapeHtml(label)}</button>`;
 }
 
-function renderVehicleDetailTab({ assignments, incidents, maintenance, documents, equipment }) {
+function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment }) {
   if (state.vehicleDetailTab === "documents") {
-    return `<div class="detail-section"><h4>Documentacion</h4>${documents.map(documentMini).join("") || empty("Sin documentacion importada.")}</div>`;
+    return `
+      <div class="detail-section">
+        <h4>Documentacion</h4>
+        <div class="record-form-list">
+          ${documents.map((item) => documentForm(item, vehicle.id)).join("") || empty("Sin documentacion importada.")}
+        </div>
+        ${documentForm(null, vehicle.id)}
+      </div>
+    `;
   }
   if (state.vehicleDetailTab === "equipment") {
-    return `<div class="detail-section"><h4>Equipamiento y matafuegos</h4>${equipment.map(equipmentMini).join("") || empty("Sin equipamiento importado.")}</div>`;
+    return `
+      <div class="detail-section">
+        <h4>Equipamiento y matafuegos</h4>
+        <div class="record-form-list">
+          ${equipment.map((item) => equipmentForm(item, vehicle.id)).join("") || empty("Sin equipamiento importado.")}
+        </div>
+        ${equipmentForm(null, vehicle.id)}
+      </div>
+    `;
   }
   if (state.vehicleDetailTab === "repairs") {
     const visible = maintenance.slice(0, 8);
@@ -627,6 +647,56 @@ function checklistItemForm(item, stage, templateId) {
         <option value="true" ${item?.isActive !== false ? "selected" : ""}>Activo</option>
         <option value="false" ${item?.isActive === false ? "selected" : ""}>Inactivo</option>
       </select></label>
+      <button class="btn ${isNew ? "" : "secondary"}" type="submit">${isNew ? "Agregar" : "Guardar"}</button>
+    </form>
+  `;
+}
+
+function documentForm(item, vehicleId) {
+  const isNew = !item;
+  const currentType = item?.type || "";
+  const docTypes = ["VTV", "RTO", "Seguro", "VTH", "Cedula", "Oblea GNC", "Habilitacion", "Otro"];
+  return `
+    <form class="record-form document-form" data-document-form="${escapeAttr(item?.id || "new")}">
+      <input type="hidden" name="id" value="${escapeAttr(item?.id || "")}">
+      <input type="hidden" name="vehicleId" value="${escapeAttr(item?.vehicleId || vehicleId)}">
+      <label class="field"><span>Tipo</span><select name="type">
+        ${docTypes.map((type) => `<option value="${escapeAttr(type)}" ${normalize(type) === normalize(currentType) ? "selected" : ""}>${escapeHtml(type)}</option>`).join("")}
+        ${currentType && !docTypes.some((type) => normalize(type) === normalize(currentType)) ? `<option value="${escapeAttr(currentType)}" selected>${escapeHtml(currentType)}</option>` : ""}
+      </select></label>
+      <label class="field"><span>Numero</span><input name="number" value="${escapeAttr(item?.number || "")}" placeholder="Poliza, acta, referencia"></label>
+      <label class="field"><span>Vence</span><input name="expiresAt" type="date" value="${escapeAttr(dateInputValue(item?.expiresAt))}"></label>
+      <label class="field"><span>Estado</span><select name="status">
+        ${["Vigente", "Pendiente", "Vencido", "No aplica"].map((status) => `<option value="${status}" ${normalize(item?.status || "") === normalize(status) ? "selected" : ""}>${status}</option>`).join("")}
+      </select></label>
+      <label class="field wide"><span>Observaciones</span><input name="notes" value="${escapeAttr(item?.notes || "")}" placeholder="Detalle adicional"></label>
+      <button class="btn ${isNew ? "" : "secondary"}" type="submit">${isNew ? "Agregar" : "Guardar"}</button>
+    </form>
+  `;
+}
+
+function equipmentForm(item, vehicleId) {
+  const isNew = !item;
+  const currentName = item?.name || "";
+  const names = ["Matafuego", "Balizas", "Cricket", "Llave cruz", "Herramientas", "Botiquin", "Chaleco reflectivo", "Otro"];
+  return `
+    <form class="record-form equipment-form" data-equipment-form="${escapeAttr(item?.id || "new")}">
+      <input type="hidden" name="id" value="${escapeAttr(item?.id || "")}">
+      <input type="hidden" name="vehicleId" value="${escapeAttr(item?.vehicleId || vehicleId)}">
+      <label class="field"><span>Elemento</span><select name="name">
+        ${names.map((name) => `<option value="${escapeAttr(name)}" ${normalize(name) === normalize(currentName) ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+        ${currentName && !names.some((name) => normalize(name) === normalize(currentName)) ? `<option value="${escapeAttr(currentName)}" selected>${escapeHtml(currentName)}</option>` : ""}
+      </select></label>
+      <label class="field"><span>Esperado</span><select name="expected">
+        <option value="true" ${item?.expected !== false ? "selected" : ""}>Si</option>
+        <option value="false" ${item?.expected === false ? "selected" : ""}>No</option>
+      </select></label>
+      <label class="field"><span>Presente</span><select name="present">
+        <option value="true" ${item?.present !== false ? "selected" : ""}>Presente</option>
+        <option value="false" ${item?.present === false ? "selected" : ""}>Faltante</option>
+      </select></label>
+      <label class="field"><span>Vence</span><input name="expiresAt" type="date" value="${escapeAttr(dateInputValue(item?.expiresAt))}"></label>
+      <label class="field wide"><span>Observaciones</span><input name="notes" value="${escapeAttr(item?.notes || "")}" placeholder="Marca, numero, detalle"></label>
       <button class="btn ${isNew ? "" : "secondary"}" type="submit">${isNew ? "Agregar" : "Guardar"}</button>
     </form>
   `;
@@ -838,6 +908,14 @@ function bindCommon() {
   const driverForm = document.getElementById("driverForm");
   if (driverForm) driverForm.addEventListener("submit", submitDriverForm);
 
+  document.querySelectorAll(".document-form").forEach((form) => {
+    form.addEventListener("submit", submitDocumentForm);
+  });
+
+  document.querySelectorAll(".equipment-form").forEach((form) => {
+    form.addEventListener("submit", submitEquipmentForm);
+  });
+
   document.querySelectorAll(".checklist-item-form").forEach((form) => {
     form.addEventListener("submit", submitChecklistItemForm);
   });
@@ -990,6 +1068,58 @@ async function submitRoleChange(profileId, role) {
   } catch (error) {
     toast(error.message || "No se pudo actualizar el rol.");
     render();
+  }
+}
+
+async function submitDocumentForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const documentItem = {
+    id: String(form.get("id") || ""),
+    vehicleId: String(form.get("vehicleId") || ""),
+    type: String(form.get("type") || "").trim(),
+    number: String(form.get("number") || "").trim(),
+    expiresAt: String(form.get("expiresAt") || ""),
+    status: String(form.get("status") || "").trim(),
+    notes: String(form.get("notes") || "").trim(),
+  };
+  try {
+    const saved = state.dataMode === "supabase" ? await window.fleetSupabase.saveDocument(documentItem) : documentItem;
+    const nextItem = { ...documentItem, ...saved };
+    runtime.documents = upsertById(runtime.documents || [], nextItem);
+    attachVehicleRecords(nextItem.vehicleId);
+    addAudit(documentItem.id ? "document_updated" : "document_created", state.user.username, "vehicle_documents", nextItem.id || nextItem.type);
+    saveRuntime();
+    toast(documentItem.id ? "Documento actualizado." : "Documento agregado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo guardar el documento.");
+  }
+}
+
+async function submitEquipmentForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const equipmentItem = {
+    id: String(form.get("id") || ""),
+    vehicleId: String(form.get("vehicleId") || ""),
+    name: String(form.get("name") || "").trim(),
+    expected: String(form.get("expected")) === "true",
+    present: String(form.get("present")) === "true",
+    expiresAt: String(form.get("expiresAt") || ""),
+    notes: String(form.get("notes") || "").trim(),
+  };
+  try {
+    const saved = state.dataMode === "supabase" ? await window.fleetSupabase.saveEquipment(equipmentItem) : equipmentItem;
+    const nextItem = { ...equipmentItem, ...saved };
+    runtime.equipment = upsertById(runtime.equipment || [], nextItem);
+    attachVehicleRecords(nextItem.vehicleId);
+    addAudit(equipmentItem.id ? "equipment_updated" : "equipment_created", state.user.username, "vehicle_equipment", nextItem.id || nextItem.name);
+    saveRuntime();
+    toast(equipmentItem.id ? "Equipamiento actualizado." : "Equipamiento agregado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo guardar el equipamiento.");
   }
 }
 
@@ -1497,6 +1627,29 @@ function groupCount(items, key) {
   }, {});
 }
 
+function upsertById(items, item) {
+  return item.id && items.some((current) => current.id === item.id)
+    ? items.map((current) => current.id === item.id ? item : current)
+    : [item, ...items];
+}
+
+function attachVehicleRecords(vehicleId) {
+  runtime.vehicles = runtime.vehicles.map((vehicle) => {
+    if (vehicle.id !== vehicleId) return vehicle;
+    const documents = (runtime.documents || []).filter((item) => item.vehicleId === vehicle.id);
+    const equipment = (runtime.equipment || []).filter((item) => item.vehicleId === vehicle.id);
+    const vtv = documents.find((item) => normalize(item.type) === "vtv");
+    const vth = documents.find((item) => normalize(item.type) === "vth");
+    return {
+      ...vehicle,
+      documents,
+      equipment,
+      vtv: vtv?.expiresAt || vehicle.vtv || "",
+      vth: vth?.expiresAt || vehicle.vth || "",
+    };
+  });
+}
+
 function sortDesc(key) {
   return (a, b) => String(b[key] || "").localeCompare(String(a[key] || ""));
 }
@@ -1577,6 +1730,14 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function dateInputValue(value) {
+  if (!value) return "";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
 function slug(value) {

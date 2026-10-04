@@ -402,6 +402,42 @@
     return mapEmployee(data);
   }
 
+  async function saveDocument(documentItem) {
+    if (!enabled) return documentItem;
+    const payload = {
+      vehicle_id: documentItem.vehicleId,
+      document_type: documentItem.type,
+      document_number: documentItem.number || null,
+      expires_at: documentItem.expiresAt || null,
+      status: documentItem.status || null,
+      notes: documentItem.notes || null,
+    };
+    const query = documentItem.id
+      ? client.from("vehicle_documents").update(payload).eq("id", documentItem.id).select("*").single()
+      : client.from("vehicle_documents").insert(payload).select("*").single();
+    const { data, error } = await query;
+    if (error) throw error;
+    return mapDocument(data);
+  }
+
+  async function saveEquipment(equipmentItem) {
+    if (!enabled) return equipmentItem;
+    const payload = {
+      vehicle_id: equipmentItem.vehicleId,
+      equipment_name: equipmentItem.name,
+      expected: equipmentItem.expected,
+      present: equipmentItem.present,
+      expires_at: equipmentItem.expiresAt || null,
+      notes: equipmentItem.notes || null,
+    };
+    const query = equipmentItem.id
+      ? client.from("vehicle_equipment").update(payload).eq("id", equipmentItem.id).select("*").single()
+      : client.from("vehicle_equipment").insert(payload).select("*").single();
+    const { data, error } = await query;
+    if (error) throw error;
+    return mapEquipment(data);
+  }
+
   async function updateProfileRole(profileId, role) {
     if (!enabled) return;
     const { data, error } = await client
@@ -458,6 +494,8 @@
     saveVehicle,
     deactivateVehicle,
     saveEmployee,
+    saveDocument,
+    saveEquipment,
     updateProfileRole,
     saveChecklistItem,
   };
