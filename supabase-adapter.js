@@ -153,6 +153,35 @@
     };
   }
 
+  function mapProfile(row) {
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      username: row.username || "",
+      role: row.role,
+      isActive: row.is_active,
+      employeeId: row.employee_id,
+      employeeNumber: row.employees?.employee_number || "",
+      employeeName: row.employees?.full_name || "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function mapAuditLog(row) {
+    return {
+      id: row.id,
+      actorId: row.actor_id,
+      actorName: row.actor_profile?.display_name || "Sistema",
+      action: row.action,
+      entityName: row.entity_name,
+      entityId: row.entity_id,
+      oldData: row.old_data,
+      newData: row.new_data,
+      createdAt: row.created_at,
+    };
+  }
+
   async function currentProfile() {
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) return null;
@@ -176,7 +205,7 @@
   }
 
   async function loadRuntime() {
-    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult] = await Promise.all([
+    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, profilesResult, auditResult] = await Promise.all([
       client.from("vehicles").select("*").eq("is_active", true).order("domain"),
       client.from("employees").select("*").eq("is_active", true).order("full_name"),
       client.from("vehicle_assignments").select("*, vehicles(domain), employees(employee_number, full_name)").order("started_at", { ascending: false }).limit(500),
@@ -184,6 +213,8 @@
       client.from("maintenance_records").select("*, vehicles(domain)").order("created_at", { ascending: false }).limit(2500),
       client.from("vehicle_documents").select("*").order("expires_at", { ascending: true }),
       client.from("vehicle_equipment").select("*").order("equipment_name", { ascending: true }),
+      client.from("profiles").select("*, employees(employee_number, full_name)").order("display_name", { ascending: true }),
+      client.from("audit_logs").select("*, actor_profile:profiles!audit_logs_actor_id_fkey(display_name)").order("created_at", { ascending: false }).limit(500),
     ]);
 
     const firstError = [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult].find((result) => result.error);
@@ -218,7 +249,8 @@
       maintenance: maintenanceResult.data.map(mapMaintenance),
       documents,
       equipment,
-      auditLogs: [],
+      profiles: profilesResult.error ? [] : profilesResult.data.map(mapProfile),
+      auditLogs: auditResult.error ? [] : auditResult.data.map(mapAuditLog),
     };
   }
 
@@ -343,6 +375,18 @@
     return mapEmployee(data);
   }
 
+  async function updateProfileRole(profileId, role) {
+    if (!enabled) return;
+    const { data, error } = await client
+      .from("profiles")
+      .update({ role })
+      .eq("id", profileId)
+      .select("*, employees(employee_number, full_name)")
+      .single();
+    if (error) throw error;
+    return mapProfile(data);
+  }
+
   function groupBy(items, key) {
     return items.reduce((acc, item) => {
       const value = item[key];
@@ -369,5 +413,6 @@
     saveVehicle,
     deactivateVehicle,
     saveEmployee,
+    updateProfileRole,
   };
 })();

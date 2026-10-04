@@ -396,6 +396,21 @@ button {
   border-radius: 8px;
 }
 
+.inline-select {
+  min-width: 170px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: white;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.role-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

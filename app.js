@@ -43,6 +43,7 @@ function loadRuntime() {
     assignments: assignments.length ? assignments : seedAssignments,
     incidents: saved.incidents || buildSeedIncidents(seedAssignments),
     maintenance: saved.maintenance || buildSeedMaintenance(seedData.vehicles || []),
+    profiles: saved.profiles || [],
     auditLogs: saved.auditLogs || [],
   });
 }
@@ -200,7 +201,10 @@ function render() {
   if (state.loading) return renderShellMessage("Cargando aplicacion...");
   if (!state.user) return renderLogin();
 
+  const appRole = state.user.appRole || (state.user.role === "admin" ? "admin" : "driver");
   const isAdmin = state.user.role === "admin";
+  const canManageUsers = ["admin", "super_admin"].includes(appRole);
+  const canViewAudit = ["admin", "super_admin", "auditor"].includes(appRole);
   if (!isAdmin) state.view = "driver";
 
   app.innerHTML = `
@@ -214,10 +218,12 @@ function render() {
           ${isAdmin ? navButton("incidents", "Danos") : ""}
           ${isAdmin ? navButton("maintenance", "Mantenimiento") : ""}
           ${isAdmin ? navButton("reports", "Reportes") : ""}
+          ${canManageUsers ? navButton("users", "Usuarios") : ""}
+          ${canViewAudit ? navButton("audit", "Auditoria") : ""}
           ${navButton("driver", isAdmin ? "Modo conductor" : "Mi turno")}
         </nav>
         <div class="user-box">
-          <div><strong>${escapeHtml(state.user.name)}</strong><br><span class="muted">${isAdmin ? "Administrador" : "Conductor"}</span></div>
+          <div><strong>${escapeHtml(state.user.name)}</strong><br><span class="muted">${isAdmin ? roleLabel(appRole) : "Conductor"}</span></div>
           <button class="btn secondary" data-action="logout">Cerrar sesion</button>
         </div>
       </aside>
@@ -303,6 +309,8 @@ function renderView() {
   if (state.view === "incidents") return renderIncidents();
   if (state.view === "maintenance") return renderMaintenance();
   if (state.view === "reports") return renderReports();
+  if (state.view === "users") return renderUsers();
+  if (state.view === "audit") return renderAudit();
   if (state.view === "driver") return renderDriver();
   return renderDashboard();
 }
@@ -556,6 +564,52 @@ function renderReports() {
   `;
 }
 
+function renderUsers() {
+  const roles = ["driver", "admin", "supervisor", "maintenance", "auditor", "super_admin"];
+  const query = normalize(state.query);
+  const rows = (runtime.profiles || [])
+    .filter((profile) => !query || normalize([profile.displayName, profile.username, profile.employeeNumber, profile.employeeName, profile.role].join(" ")).includes(query));
+  return `
+    ${topbar("Usuarios y roles")}
+    <div class="panel">
+      <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Nombre, usuario, legajo o rol"></label></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Usuario</th><th>Empleado</th><th>Rol</th><th>Estado</th></tr></thead>
+          <tbody>${rows.map((profile) => `
+            <tr>
+              <td><strong>${escapeHtml(profile.displayName)}</strong><br><span class="muted">${escapeHtml(profile.username || profile.id)}</span></td>
+              <td>${escapeHtml(profile.employeeName || "-")}<br><span class="muted">${escapeHtml(profile.employeeNumber || "")}</span></td>
+              <td><select class="inline-select" data-role-change="${profile.id}" ${profile.id === state.user.profileId ? "disabled" : ""}>${roles.map((role) => `<option value="${role}" ${profile.role === role ? "selected" : ""}>${roleLabel(role)}</option>`).join("")}</select></td>
+              <td>${profile.isActive ? statusTextBadge("Activo") : statusTextBadge("Inactivo")}</td>
+            </tr>
+          `).join("") || `<tr><td colspan="4">${empty("No hay usuarios creados en Supabase Auth.")}</td></tr>`}</tbody>
+        </table>
+      </div>
+      <p class="muted role-note">Los usuarios se crean en Supabase Auth. Desde esta pantalla se administra el rol operativo que usa la aplicacion.</p>
+    </div>
+  `;
+}
+
+function renderAudit() {
+  const query = normalize(state.query);
+  const rows = (runtime.auditLogs || [])
+    .filter((log) => !query || normalize([log.actorName, log.action, log.entityName, log.entityId].join(" ")).includes(query))
+    .slice(0, 300);
+  return `
+    ${topbar("Auditoria")}
+    <div class="panel">
+      <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Actor, accion, tabla o ID"></label></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Actor</th><th>Accion</th><th>Entidad</th><th>Cambios</th></tr></thead>
+          <tbody>${rows.map(auditRow).join("") || `<tr><td colspan="5">${empty("Sin eventos de auditoria visibles.")}</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
 function renderDriver() {
   const active = getActiveAssignmentForUser();
   return `
@@ -714,6 +768,10 @@ function bindCommon() {
 
   const driverForm = document.getElementById("driverForm");
   if (driverForm) driverForm.addEventListener("submit", submitDriverForm);
+
+  document.querySelectorAll("[data-role-change]").forEach((select) => {
+    select.addEventListener("change", () => submitRoleChange(select.dataset.roleChange, select.value));
+  });
 }
 
 async function handleAction(action, button) {
@@ -847,6 +905,19 @@ async function submitDriverForm(event) {
   state.editDriverId = "";
   toast(existing ? "Conductor actualizado." : "Conductor creado.");
   render();
+}
+
+async function submitRoleChange(profileId, role) {
+  if (state.dataMode !== "supabase") return;
+  try {
+    const updated = await window.fleetSupabase.updateProfileRole(profileId, role);
+    runtime.profiles = (runtime.profiles || []).map((profile) => profile.id === profileId ? updated : profile);
+    toast("Rol actualizado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo actualizar el rol.");
+    render();
+  }
 }
 
 async function submitStartAssignment(event) {
@@ -1163,6 +1234,47 @@ function assignmentMini(item) {
 
 function maintenanceMini(item) {
   return `<div class="mini-record"><strong>${escapeHtml(item.type)}</strong> ${statusTextBadge(item.status)}<br><span class="muted">${escapeHtml(item.detail)}</span>${item.enteredAt ? `<br><span class="muted">Fecha: ${formatDate(item.enteredAt)}</span>` : ""}</div>`;
+}
+
+function auditRow(log) {
+  return `
+    <tr>
+      <td>${formatDateTime(log.createdAt)}</td>
+      <td>${escapeHtml(log.actorName)}</td>
+      <td>${escapeHtml(auditActionLabel(log.action))}</td>
+      <td><strong>${escapeHtml(log.entityName)}</strong><br><span class="muted">${escapeHtml(log.entityId || "-")}</span></td>
+      <td>${escapeHtml(auditSummary(log))}</td>
+    </tr>
+  `;
+}
+
+function auditSummary(log) {
+  if (log.action === "insert") return "Registro creado";
+  if (log.action === "delete") return "Registro eliminado";
+  if (log.action === "update") {
+    const oldData = log.oldData || {};
+    const newData = log.newData || {};
+    const changed = Object.keys(newData).filter((key) => JSON.stringify(oldData[key]) !== JSON.stringify(newData[key]));
+    return changed.slice(0, 6).join(", ") || "Registro actualizado";
+  }
+  return "Evento registrado";
+}
+
+function auditActionLabel(action) {
+  const labels = { insert: "Alta", update: "Edicion", delete: "Eliminacion" };
+  return labels[action] || action;
+}
+
+function roleLabel(role) {
+  const labels = {
+    driver: "Conductor",
+    admin: "Admin",
+    supervisor: "Supervisor",
+    maintenance: "Mantenimiento",
+    auditor: "Auditor",
+    super_admin: "Super admin",
+  };
+  return labels[role] || role;
 }
 
 function documentMini(item) {
