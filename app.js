@@ -1,6 +1,6 @@
 const app = document.getElementById("app");
-const storageKey = "gestion-flota-operacion-v2";
-const authorCredit = "PROGRAMADORA Y DESARROLO VANINA CABRERA";
+const storageKey = "Gestión-flota-operacion-v2";
+const authorCredit = "PROGRAMADORA Y DESARROLLO VANINA CABRERA";
 
 const state = {
   user: null,
@@ -21,7 +21,7 @@ const state = {
 };
 
 const checklistTemplate = [
-  ["Luces", ["Bajas", "Altas", "Posicion", "Stop", "Giro y balizas"]],
+  ["Luces", ["Bajas", "Altas", "Posición", "Stop", "Giro y balizas"]],
   ["Neumaticos", ["Delantero izquierdo", "Delantero derecho", "Trasero izquierdo", "Trasero derecho", "Rueda de auxilio"]],
   ["Carroceria", ["Chapa", "Paragolpes", "Puertas", "Espejos", "Cristales"]],
   ["Interior", ["Asientos", "Cinturones", "Tablero", "Limpieza"]],
@@ -50,7 +50,7 @@ const vehicleTypeOptions = [
 
 function loadRuntime() {
   const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  const oldSaved = JSON.parse(localStorage.getItem("gestion-flota-localizador-v1") || "{}");
+  const oldSaved = JSON.parse(localStorage.getItem("Gestión-flota-localizador-v1") || "{}");
   const seedAssignments = (seedData.handovers || []).map(migrateHandover);
   const assignments = saved.assignments || (oldSaved.handovers || []).map(migrateHandover);
 
@@ -205,18 +205,18 @@ async function bootstrap() {
       state.dataMode = "supabase";
       const remoteUser = await window.fleetSupabase.currentProfile();
       state.user = remoteUser || null;
-      sessionStorage.removeItem("gestion-flota-session");
+      sessionStorage.removeItem("Gestión-flota-session");
       if (state.user) {
         runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
       }
     } else {
       state.dataMode = "demo";
-      state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
+      state.user = JSON.parse(sessionStorage.getItem("Gestión-flota-session") || "null");
     }
   } catch (error) {
     console.error(error);
     state.dataMode = "demo";
-    state.user = JSON.parse(sessionStorage.getItem("gestion-flota-session") || "null");
+    state.user = JSON.parse(sessionStorage.getItem("Gestión-flota-session") || "null");
     toast("No se pudo conectar Supabase. Se abrio en modo demo.");
   } finally {
     state.loading = false;
@@ -237,17 +237,17 @@ function render() {
   app.innerHTML = `
     <div class="layout">
       <aside class="sidebar">
-        <div class="brand-mark"><span class="bolt">F</span><span>Gestion Flota</span></div>
+        <div class="brand-mark"><span class="bolt">F</span><span>Gestión Flota</span></div>
         <nav class="side-nav">
           ${isAdmin ? navButton("dashboard", "Panel") : ""}
-          ${isAdmin ? navButton("vehicles", "Vehiculos") : ""}
+          ${isAdmin ? navButton("vehicles", "Vehículos") : ""}
           ${isAdmin ? navButton("drivers", "Conductores") : ""}
-          ${isAdmin ? navButton("incidents", "Danos") : ""}
+          ${isAdmin ? navButton("incidents", "Daños") : ""}
           ${isAdmin ? navButton("maintenance", "Mantenimiento") : ""}
           ${isAdmin ? navButton("reports", "Reportes") : ""}
           ${canManageUsers ? navButton("checklist", "Checklist") : ""}
           ${canManageUsers ? navButton("users", "Usuarios") : ""}
-          ${canViewAudit ? navButton("audit", "Auditoria") : ""}
+          ${canViewAudit ? navButton("audit", "Auditoría") : ""}
           ${navButton("driver", isAdmin ? "Modo conductor" : "Mi turno")}
         </nav>
         <div class="user-box">
@@ -268,10 +268,10 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login-shell">
       <section class="brand-panel">
-        <div class="brand-mark"><span class="bolt">F</span><span>Gestion Flota</span></div>
+        <div class="brand-mark"><span class="bolt">F</span><span>Gestión Flota</span></div>
         <div>
           <h1>Control y trazabilidad vehicular</h1>
-          <p>Recepcion, uso, devolucion, kilometraje, danos, checklist y reportes operativos para flota.</p>
+          <p>Recepción, uso, Devolución, kilometraje, Daños, checklist y reportes operativos para flota.</p>
           <div class="brand-credit">${escapeHtml(authorCredit)}</div>
         </div>
       </section>
@@ -281,7 +281,7 @@ function renderLogin() {
           <p class="muted">Primera version sin GPS. El foco es responsabilidad e historial de uso.</p>
           <form class="form-grid" id="loginForm">
             <label class="field"><span>${supabaseEnabled ? "Email o legajo" : "Usuario"}</span><input name="username" autocomplete="username" value="${supabaseEnabled ? "" : "admin"}"></label>
-            <label class="field"><span>Contrasena</span><input name="password" type="password" autocomplete="current-password" value="${supabaseEnabled ? "" : "admin123"}"></label>
+            <label class="field"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" value="${supabaseEnabled ? "" : "admin123"}"></label>
             <div class="error" id="loginError"></div>
             <button class="btn" type="submit">Ingresar</button>
           </form>
@@ -301,12 +301,12 @@ function renderLogin() {
     try {
       const user = await authenticate(String(form.get("username") || "").trim(), String(form.get("password") || "").trim());
       if (!user) {
-        document.getElementById("loginError").textContent = "Usuario o contrasena incorrectos.";
+        document.getElementById("loginError").textContent = "Usuario o Contraseña incorrectos.";
         return;
       }
       state.user = user;
       state.view = user.role === "admin" ? "dashboard" : "driver";
-      if (state.dataMode === "demo") sessionStorage.setItem("gestion-flota-session", JSON.stringify(user));
+      if (state.dataMode === "demo") sessionStorage.setItem("Gestión-flota-session", JSON.stringify(user));
       if (state.dataMode === "supabase") runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
       addAudit("login", user.username, "users", user.username);
       render();
@@ -355,14 +355,14 @@ function renderDashboard() {
   return `
     ${topbar("Panel administrador", `<button class="btn" data-action="export">Exportar CSV</button>`)}
     <section class="stats">
-      ${stat("Vehiculos", stats.total)}
+      ${stat("Vehículos", stats.total)}
       ${stat("En uso", stats.inUse)}
       ${stat("Disponibles", stats.available)}
       ${stat("Con alertas", stats.alerts)}
     </section>
     <section class="grid-2">
       <div class="panel">
-        <h3>Vehiculos actualmente utilizados</h3>
+        <h3>Vehículos actualmente utilizados</h3>
         <div class="table-wrap">${activeTable(active)}</div>
       </div>
       <div class="panel">
@@ -377,14 +377,14 @@ function renderVehicles() {
   const vehicles = getFilteredVehicles();
   const editingVehicle = state.editVehicleId ? getVehicle(state.editVehicleId) : null;
   return `
-    ${topbar("Control de vehiculos", `<button class="btn" data-action="new-vehicle">Nuevo vehiculo</button>${state.dataMode === "demo" ? `<button class="btn secondary" data-action="reset">Restaurar datos base</button>` : `<span class="badge ok">Supabase conectado</span>`}`)}
+    ${topbar("Control de Vehículos", `<button class="btn" data-action="new-vehicle">Nuevo vehiculo</button>${state.dataMode === "demo" ? `<button class="btn secondary" data-action="reset">Restaurar datos base</button>` : `<span class="badge ok">Supabase conectado</span>`}`)}
     ${state.vehicleId ? renderVehicleDetail(getVehicle(state.vehicleId)) : ""}
     ${state.editVehicleId === "new" || editingVehicle ? renderVehicleForm(editingVehicle) : ""}
     <div class="panel">
       ${toolbar()}
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Dominio</th><th>Datos</th><th>Asignacion actual</th><th>Km</th><th>Alertas</th><th>Accion</th></tr></thead>
+          <thead><tr><th>Dominio</th><th>Datos</th><th>Asignacion actual</th><th>Km</th><th>Alertas</th><th>Acción</th></tr></thead>
           <tbody>${vehicles.map(vehicleRow).join("")}</tbody>
         </table>
       </div>
@@ -446,12 +446,12 @@ function renderVehicleDetail(vehicle) {
       </div>
       <div class="detail-tabs">
         ${detailTab("summary", "Resumen")}
-        ${detailTab("documents", `Documentacion ${documents.length}`)}
+        ${detailTab("documents", `Documentación ${documents.length}`)}
         ${detailTab("equipment", `Equipamiento ${equipment.length}`)}
         ${detailTab("photos", `Archivos ${photos.length}`)}
         ${detailTab("repairs", `Reparaciones ${maintenance.length}`)}
         ${detailTab("history", `Historial ${assignments.length}`)}
-        ${detailTab("damages", `Danos ${incidents.length}`)}
+        ${detailTab("damages", `Daños ${incidents.length}`)}
       </div>
       ${renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment, photos })}
     </section>
@@ -466,9 +466,9 @@ function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, 
   if (state.vehicleDetailTab === "documents") {
     return `
       <div class="detail-section">
-        <h4>Documentacion</h4>
+        <h4>Documentación</h4>
         <div class="record-form-list">
-          ${documents.map((item) => documentForm(item, vehicle.id)).join("") || empty("Sin documentacion importada.")}
+          ${documents.map((item) => documentForm(item, vehicle.id)).join("") || empty("Sin Documentación importada.")}
         </div>
         ${documentForm(null, vehicle.id)}
       </div>
@@ -512,12 +512,12 @@ function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, 
     return `<div class="detail-section"><h4>Historial de uso</h4>${assignments.slice(0, 12).map(assignmentMini).join("") || empty("Sin usos registrados.")}</div>`;
   }
   if (state.vehicleDetailTab === "damages") {
-    return `<div class="detail-section"><h4>Danos e irregularidades abiertas</h4>${incidents.map(incidentMini).join("") || empty("Sin danos abiertos.")}</div>`;
+    return `<div class="detail-section"><h4>Daños e irregularidades abiertas</h4>${incidents.map(incidentMini).join("") || empty("Sin Daños abiertos.")}</div>`;
   }
   return `
     <div class="grid-3 detail-section-grid">
       <div>
-        <h4>Documentacion critica</h4>
+        <h4>Documentación critica</h4>
         ${documents.filter((item) => expiryState(item.expiresAt) !== "vigente").slice(0, 5).map(documentMini).join("") || empty("Sin vencimientos criticos.")}
       </div>
       <div>
@@ -544,7 +544,7 @@ function renderDrivers() {
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Legajo, nombre, area, cargo"></label></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Legajo</th><th>Nombre</th><th>Area</th><th>Cargo</th><th>Usos</th><th>Actual</th><th>Accion</th></tr></thead>
+          <thead><tr><th>Legajo</th><th>Nombre</th><th>Area</th><th>Cargo</th><th>Usos</th><th>Actual</th><th>Acción</th></tr></thead>
           <tbody>${rows.map(driverRow).join("")}</tbody>
         </table>
       </div>
@@ -575,7 +575,7 @@ function renderDriverForm(person) {
 function renderIncidents() {
   const incidents = runtime.incidents.slice().sort(sortDesc("reportedAt"));
   return `
-    ${topbar("Danos e irregularidades")}
+    ${topbar("Daños e irregularidades")}
     <div class="panel">
       <div class="table-wrap">
         <table>
@@ -606,7 +606,7 @@ function renderMaintenance() {
       ${toolbar()}
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Proveedor/Taller</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Proveedor/Taller</th><th>Detalle</th><th>Estado</th><th>Acción</th></tr></thead>
           <tbody>${rows.map((item) => `
             <tr>
               <td>${formatDate(item.enteredAt || item.createdAt)}</td>
@@ -668,12 +668,12 @@ function renderReports() {
     ${reportFilters()}
     <section class="grid-3">
       <div class="panel"><h3>Usos registrados</h3><strong class="big">${assignments.length}</strong><p class="muted">Asignaciones historicas.</p></div>
-      <div class="panel"><h3>Kilometros cerrados</h3><strong class="big">${totalKm}</strong><p class="muted">Solo usos con devolucion.</p></div>
-      <div class="panel"><h3>Danos abiertos</h3><strong class="big">${openDamages}</strong><p class="muted">Filtrados por patente/area cuando aplica.</p></div>
+      <div class="panel"><h3>Kilómetros cerrados</h3><strong class="big">${totalKm}</strong><p class="muted">Solo usos con Devolución.</p></div>
+      <div class="panel"><h3>Daños abiertos</h3><strong class="big">${openDamages}</strong><p class="muted">Filtrados por patente/area cuando aplica.</p></div>
     </section>
     <section class="grid-3" style="margin-top:16px">
-      <div class="panel"><h3>Vehiculos filtrados</h3><strong class="big">${vehicles.length}</strong><p class="muted">Unidades por busqueda y area.</p></div>
-      <div class="panel"><h3>Documentacion critica</h3><strong class="big">${documents.length}</strong><p class="muted">Vencida, proxima o sin fecha.</p></div>
+      <div class="panel"><h3>Vehículos filtrados</h3><strong class="big">${vehicles.length}</strong><p class="muted">Unidades por busqueda y area.</p></div>
+      <div class="panel"><h3>Documentación critica</h3><strong class="big">${documents.length}</strong><p class="muted">Vencida, proxima o sin fecha.</p></div>
       <div class="panel"><h3>Equipamiento critico</h3><strong class="big">${equipment.length}</strong><p class="muted">Faltante, vencido o proximo.</p></div>
     </section>
     <section class="grid-2" style="margin-top:16px">
@@ -681,11 +681,11 @@ function renderReports() {
       <div class="panel"><h3>Uso por conductor</h3>${miniTable(byDriver, ["Conductor", "Usos"])}</div>
     </section>
     <section class="grid-2" style="margin-top:16px">
-      <div class="panel"><h3>Vehiculos por tipo</h3>${miniTable(groupCount(vehicles, "type"), ["Tipo", "Cantidad"])}</div>
-      <div class="panel"><h3>Vehiculos por empresa</h3>${miniTable(groupCount(vehicles, "company"), ["Empresa", "Cantidad"])}</div>
+      <div class="panel"><h3>Vehículos por tipo</h3>${miniTable(groupCount(vehicles, "type"), ["Tipo", "Cantidad"])}</div>
+      <div class="panel"><h3>Vehículos por empresa</h3>${miniTable(groupCount(vehicles, "company"), ["Empresa", "Cantidad"])}</div>
     </section>
     <section class="grid-2" style="margin-top:16px">
-      <div class="panel"><h3>Documentacion a revisar</h3><div class="table-wrap">${documentReportTable(documents)}</div></div>
+      <div class="panel"><h3>Documentación a revisar</h3><div class="table-wrap">${documentReportTable(documents)}</div></div>
       <div class="panel"><h3>Equipamiento y matafuegos</h3><div class="table-wrap">${equipmentReportTable(equipment)}</div></div>
     </section>
     <section class="panel" style="margin-top:16px">
@@ -827,7 +827,7 @@ function photoUploadForm(vehicleId) {
         <option value="Equipamiento">Equipamiento</option>
         <option value="Otro">Otro</option>
       </select></label>
-      <label class="field wide"><span>Descripcion</span><input name="description" placeholder="Ej. VTV 2027, dano paragolpes, tablero inicial"></label>
+      <label class="field wide"><span>Descripción</span><input name="description" placeholder="Ej. VTV 2027, dano paragolpes, tablero inicial"></label>
       <label class="field wide"><span>Archivo</span><input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
       <button class="btn" type="submit">Subir</button>
     </form>
@@ -865,14 +865,14 @@ function renderUsers() {
           <h3>Crear usuarios choferes</h3>
           <p class="muted">Pendientes: <strong>${pendingDriverUsers.length}</strong>. Se crean con email tecnico por legajo y rol conductor.</p>
         </div>
-        <label class="field user-password-field"><span>Contraseña inicial</span><input id="bulkDriverPassword" type="password" autocomplete="new-password" placeholder="Minimo 8 caracteres"></label>
+        <label class="field user-password-field"><span>Contraseña inicial</span><input id="bulkDriverPassword" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></label>
         <button class="btn" data-action="bulk-create-drivers" ${state.dataMode !== "supabase" || !pendingDriverUsers.length ? "disabled" : ""}>Crear pendientes</button>
       </div>
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Nombre, usuario, legajo o rol"></label></div>
       <p class="muted role-note">Mostrando ${rows.length} de ${query ? filteredRows.length : totalProfiles}. Para editar un chofer especifico, buscalo por legajo o nombre.</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Usuario</th><th>Empleado vinculado</th><th>Rol</th><th>Estado</th><th>Accion</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>Empleado vinculado</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
           <tbody>${rows.map((profile) => `
             <tr>
               <td><strong>${escapeHtml(profile.displayName)}</strong><br><span class="muted">${escapeHtml(profile.username || profile.id)}</span></td>
@@ -904,13 +904,13 @@ function renderAudit() {
     .filter((log) => !query || normalize([log.actorName, log.action, log.entityName, log.entityId].join(" ")).includes(query))
     .slice(0, 300);
   return `
-    ${topbar("Auditoria")}
+    ${topbar("Auditoría")}
     <div class="panel">
-      <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Actor, accion, tabla o ID"></label></div>
+      <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Actor, Acción, tabla o ID"></label></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Fecha</th><th>Actor</th><th>Accion</th><th>Entidad</th><th>Cambios</th></tr></thead>
-          <tbody>${rows.map(auditRow).join("") || `<tr><td colspan="5">${empty("Sin eventos de auditoria visibles.")}</td></tr>`}</tbody>
+          <thead><tr><th>Fecha</th><th>Actor</th><th>Acción</th><th>Entidad</th><th>Cambios</th></tr></thead>
+          <tbody>${rows.map(auditRow).join("") || `<tr><td colspan="5">${empty("Sin eventos de Auditoría visibles.")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>
@@ -947,7 +947,7 @@ function startAssignmentForm() {
   const unavailable = selected && selected.activeAssignmentId;
   return `
     <form class="panel form-grid" id="startForm">
-      <h3>Recepcion del vehiculo</h3>
+      <h3>Recepción del vehiculo</h3>
       <div class="stepper">
         <span class="active">Vehiculo</span><span>Km inicial</span><span>Checklist</span><span>Confirmacion</span>
       </div>
@@ -965,9 +965,9 @@ function startAssignmentForm() {
       </div>
       <div class="notice">El kilometraje inicial no puede ser menor al ultimo registrado sin generar una advertencia auditable.</div>
       ${renderChecklist("start", selected)}
-      <label class="field"><span>Novedades detectadas al recibir</span><textarea name="startNotes" placeholder="Registrar danos no listados como preexistentes, faltantes o advertencias."></textarea></label>
+      <label class="field"><span>Novedades detectadas al recibir</span><textarea name="startNotes" placeholder="Registrar Daños no listados como preexistentes, faltantes o advertencias."></textarea></label>
       <label class="confirm-line"><input name="accepted" type="checkbox" required> Declaro haber verificado el estado del vehiculo y los elementos indicados en este control.</label>
-      <button class="btn" type="submit" ${unavailable ? "disabled" : ""}>Confirmar recepcion</button>
+      <button class="btn" type="submit" ${unavailable ? "disabled" : ""}>Confirmar Recepción</button>
     </form>
   `;
 }
@@ -988,21 +988,21 @@ function activeAssignmentView(assignment) {
           ${summaryItem("Ubicacion retiro", assignment.locationStart)}
         </div>
       </div>
-      <h3 style="margin-top:18px">Danos preexistentes vistos al recibir</h3>
-      <div class="vehicle-list">${preexisting.map(incidentCard).join("") || empty("No habia danos preexistentes abiertos.")}</div>
+      <h3 style="margin-top:18px">Daños preexistentes vistos al recibir</h3>
+      <div class="vehicle-list">${preexisting.map(incidentCard).join("") || empty("No habia Daños preexistentes abiertos.")}</div>
     </section>
     <form class="panel form-grid" id="closeForm">
-      <h3>Devolucion del vehiculo</h3>
+      <h3>Devolución del vehiculo</h3>
       <div class="stepper">
         <span class="active">Km final</span><span>Checklist final</span><span>Novedades</span><span>Devolver</span>
       </div>
       <div class="grid-2 compact">
         <label class="field"><span>Kilometraje final</span><input name="odometerEnd" type="number" min="${assignment.odometerStart}" required placeholder="Debe ser mayor o igual a ${assignment.odometerStart}"></label>
-        <label class="field"><span>Base o zona de devolucion</span><input name="locationEnd" required placeholder="Ej. 12 de Octubre"></label>
+        <label class="field"><span>Base o zona de Devolución</span><input name="locationEnd" required placeholder="Ej. 12 de Octubre"></label>
       </div>
       ${renderChecklist("end", getVehicle(assignment.vehicleId))}
-      <label class="field"><span>Novedades, danos nuevos o faltantes</span><textarea name="endNotes" placeholder="Detalle cualquier dano nuevo, faltante, desperfecto o irregularidad."></textarea></label>
-      <label class="confirm-line"><input name="returned" type="checkbox" required> Confirmo la devolucion del vehiculo con la informacion declarada.</label>
+      <label class="field"><span>Novedades, Daños nuevos o faltantes</span><textarea name="endNotes" placeholder="Detalle cualquier dano nuevo, faltante, desperfecto o irregularidad."></textarea></label>
+      <label class="confirm-line"><input name="returned" type="checkbox" required> Confirmo la Devolución del vehiculo con la informacion declarada.</label>
       <button class="btn" type="submit">Devolver vehiculo</button>
     </form>
   `;
@@ -1031,8 +1031,8 @@ function vehicleReceiptCard(vehicle, incidents) {
         ${summaryItem("Equipamiento", equipment.length)}
       </div>
       ${active ? `<div class="notice danger">Actualmente asignado a ${escapeHtml(active.driver)} desde ${formatDateTime(active.startAt)}.</div>` : ""}
-      <h4>Alertas y danos preexistentes</h4>
-      <div class="vehicle-list slim">${incidents.map(incidentCard).join("") || empty("Sin danos preexistentes abiertos.")}</div>
+      <h4>Alertas y Daños preexistentes</h4>
+      <div class="vehicle-list slim">${incidents.map(incidentCard).join("") || empty("Sin Daños preexistentes abiertos.")}</div>
     </section>
   `;
 }
@@ -1121,7 +1121,7 @@ async function handleAction(action, button) {
   if (action === "logout") {
     addAudit("logout", state.user.username, "users", state.user.username);
     if (state.dataMode === "supabase") await window.fleetSupabase.signOut();
-    sessionStorage.removeItem("gestion-flota-session");
+    sessionStorage.removeItem("Gestión-flota-session");
     state.user = null;
     state.view = "dashboard";
     render();
@@ -1619,7 +1619,7 @@ async function submitStartAssignment(event) {
   });
   addAudit("assignment_started", state.user.username, "vehicle_assignments", assignment.id);
   saveRuntime();
-  toast(assignment.odometerWarning ? "Recepcion registrada con advertencia de kilometraje." : "Recepcion registrada.");
+  toast(assignment.odometerWarning ? "Recepción registrada con advertencia de kilometraje." : "Recepción registrada.");
   render();
 }
 
@@ -1720,12 +1720,12 @@ function getAlerts() {
   });
   runtime.vehicles.forEach((vehicle) => {
     const state = vtvState(vehicle);
-    if (state !== "vigente") alerts.push({ type: "Documentacion", level: state === "vencida" ? "critica" : "advertencia", text: `${vehicle.domain}: VTV ${state}`, at: vehicle.vtv || "" });
+    if (state !== "vigente") alerts.push({ type: "Documentación", level: state === "vencida" ? "critica" : "advertencia", text: `${vehicle.domain}: VTV ${state}`, at: vehicle.vtv || "" });
     (vehicle.documents || []).forEach((document) => {
       const state = expiryState(document.expiresAt);
       if (document.expiresAt && state !== "vigente") {
         alerts.push({
-          type: "Documentacion",
+          type: "Documentación",
           level: state === "vencida" ? "critica" : "advertencia",
           text: `${vehicle.domain}: ${document.type} ${state}`,
           at: document.expiresAt,
@@ -1888,7 +1888,7 @@ function activeTable(assignments) {
   return `
     <table>
       <thead><tr><th>Patente</th><th>Conductor</th><th>Inicio</th><th>Km inicial</th><th>Preexistentes</th></tr></thead>
-      <tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.driver)}</td><td>${formatDateTime(item.startAt)}</td><td>${item.odometerStart}</td><td>${(item.preexistingIncidentIds || []).length}</td></tr>`).join("") || `<tr><td colspan="5">${empty("No hay vehiculos en uso.")}</td></tr>`}</tbody>
+      <tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.driver)}</td><td>${formatDateTime(item.startAt)}</td><td>${item.odometerStart}</td><td>${(item.preexistingIncidentIds || []).length}</td></tr>`).join("") || `<tr><td colspan="5">${empty("No hay Vehículos en uso.")}</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -1910,7 +1910,7 @@ function documentReportTable(items) {
         const vehicle = getVehicle(item.vehicleId) || {};
         const stateName = expiryState(item.expiresAt);
         return `<tr><td>${escapeHtml(vehicle.domain || "-")}</td><td>${escapeHtml(item.type)}</td><td>${formatDate(item.expiresAt)}</td><td>${expiryBadge(stateName)}</td><td>${escapeHtml(item.notes || item.number || "")}</td></tr>`;
-      }).join("") || `<tr><td colspan="5">${empty("Sin documentacion critica para los filtros seleccionados.")}</td></tr>`}</tbody>
+      }).join("") || `<tr><td colspan="5">${empty("Sin Documentación critica para los filtros seleccionados.")}</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -2162,11 +2162,11 @@ function exportReportsCsv() {
     ["patente", "conductor", "legajo", "inicio", "fin", "km_inicial", "km_final", "km_recorridos", "notas_inicio", "notas_fin"],
     ...getReportAssignments().map((item) => [item.domain, item.driver, item.employeeId, item.startAt, item.endAt || "", item.odometerStart, item.odometerEnd || "", item.distance || "", item.startNotes, item.endNotes]),
     [],
-    ["VEHICULOS"],
+    ["Vehículos"],
     ["patente", "interno", "modelo", "tipo", "empresa", "area", "sector", "km", "estado"],
     ...getReportVehicles().map((item) => [item.domain, item.internal, item.model, item.type, item.company, item.area, item.sector, item.odometer, item.status]),
     [],
-    ["DOCUMENTACION_CRITICA"],
+    ["Documentación_CRITICA"],
     ["patente", "tipo", "vence", "estado", "numero", "notas"],
     ...getReportDocuments().map((item) => {
       const vehicle = getVehicle(item.vehicleId) || {};
@@ -2222,7 +2222,7 @@ function reportWorkbookData() {
       "Notas inicio": item.startNotes || "",
       "Notas fin": item.endNotes || "",
     })),
-    Vehiculos: getReportVehicles().map((item) => ({
+    Vehículos: getReportVehicles().map((item) => ({
       Patente: item.domain,
       Interno: item.internal,
       Modelo: item.model,
@@ -2233,7 +2233,7 @@ function reportWorkbookData() {
       Kilometraje: item.odometer,
       Estado: item.status,
     })),
-    Documentacion: getReportDocuments().map((item) => {
+    Documentación: getReportDocuments().map((item) => {
       const vehicle = getVehicle(item.vehicleId) || {};
       return {
         Patente: vehicle.domain || "",
@@ -2297,14 +2297,14 @@ function exportPdf() {
   y = pdfSectionTitle(doc, "Resumen", y, page);
   y = pdfKeyValues(doc, [
     ["Usos registrados", assignments.length],
-    ["Kilometros cerrados", totalKm],
-    ["Vehiculos filtrados", vehicles.length],
-    ["Documentacion critica", documents.length],
+    ["Kilómetros cerrados", totalKm],
+    ["Vehículos filtrados", vehicles.length],
+    ["Documentación critica", documents.length],
     ["Equipamiento critico", equipment.length],
     ["Reparaciones", maintenance.length],
   ], y, page);
 
-  y = pdfSectionTitle(doc, "Documentacion a revisar", y, page);
+  y = pdfSectionTitle(doc, "Documentación a revisar", y, page);
   y = pdfSimpleTable(doc, ["Patente", "Tipo", "Vence", "Estado"], documents.slice(0, 20).map((item) => {
     const vehicle = getVehicle(item.vehicleId) || {};
     return [vehicle.domain || "-", item.type, formatDate(item.expiresAt), expiryState(item.expiresAt)];
@@ -2575,7 +2575,7 @@ function toast(message) {
 }
 
 function renderShellMessage(message) {
-  app.innerHTML = `<div class="login-shell"><section class="login-panel"><div class="login-card"><h2>${escapeHtml(message)}</h2><p class="muted">Gestion Flota Operacion</p><p class="author-credit light">${escapeHtml(authorCredit)}</p></div></section></div>`;
+  app.innerHTML = `<div class="login-shell"><section class="login-panel"><div class="login-card"><h2>${escapeHtml(message)}</h2><p class="muted">Gestión Flota Operacion</p><p class="author-credit light">${escapeHtml(authorCredit)}</p></div></section></div>`;
 }
 
 init();
