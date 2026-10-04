@@ -7,6 +7,7 @@ const state = {
   query: "",
   area: "Todas",
   vehicleId: "",
+  vehicleDetailTab: "summary",
   editVehicleId: "",
   editDriverId: "",
   loading: false,
@@ -401,35 +402,63 @@ function renderVehicleDetail(vehicle) {
         ${summaryItem("VTH", vehicle.vth ? formatDate(vehicle.vth) : "-")}
         ${summaryItem("Matafuego", fireExtinguisher ? `${fireExtinguisher.present ? "Presente" : "Faltante"} ${fireExtinguisher.expiresAt ? `| Vto ${formatDate(fireExtinguisher.expiresAt)}` : ""}` : "-")}
       </div>
-      <div class="grid-3">
-        <div>
-          <h4>Danos e irregularidades abiertas</h4>
-          ${incidents.map(incidentMini).join("") || empty("Sin danos abiertos.")}
-        </div>
-        <div>
-          <h4>Historial de uso</h4>
-          ${assignments.slice(0, 6).map(assignmentMini).join("") || empty("Sin usos registrados.")}
-        </div>
-        <div>
-          <h4>Mantenimiento</h4>
-          ${maintenance.slice(0, 6).map(maintenanceMini).join("") || empty("Sin registros.")}
-        </div>
+      <div class="detail-tabs">
+        ${detailTab("summary", "Resumen")}
+        ${detailTab("documents", `Documentacion ${documents.length}`)}
+        ${detailTab("equipment", `Equipamiento ${equipment.length}`)}
+        ${detailTab("repairs", `Reparaciones ${maintenance.length}`)}
+        ${detailTab("history", `Historial ${assignments.length}`)}
+        ${detailTab("damages", `Danos ${incidents.length}`)}
       </div>
-      <div class="grid-3 detail-extra">
-        <div>
-          <h4>Documentacion</h4>
-          ${documents.map(documentMini).join("") || empty("Sin documentacion importada.")}
-        </div>
-        <div>
-          <h4>Equipamiento</h4>
-          ${equipment.slice(0, 12).map(equipmentMini).join("") || empty("Sin equipamiento importado.")}
-        </div>
-        <div>
-          <h4>Reparaciones historicas</h4>
-          ${maintenance.slice(0, 10).map(maintenanceMini).join("") || empty("Sin reparaciones importadas.")}
-        </div>
-      </div>
+      ${renderVehicleDetailTab({ assignments, incidents, maintenance, documents, equipment })}
     </section>
+  `;
+}
+
+function detailTab(tab, label) {
+  return `<button class="tab-btn ${state.vehicleDetailTab === tab ? "active" : ""}" data-action="detail-tab" data-tab="${tab}">${escapeHtml(label)}</button>`;
+}
+
+function renderVehicleDetailTab({ assignments, incidents, maintenance, documents, equipment }) {
+  if (state.vehicleDetailTab === "documents") {
+    return `<div class="detail-section"><h4>Documentacion</h4>${documents.map(documentMini).join("") || empty("Sin documentacion importada.")}</div>`;
+  }
+  if (state.vehicleDetailTab === "equipment") {
+    return `<div class="detail-section"><h4>Equipamiento y matafuegos</h4>${equipment.map(equipmentMini).join("") || empty("Sin equipamiento importado.")}</div>`;
+  }
+  if (state.vehicleDetailTab === "repairs") {
+    const visible = maintenance.slice(0, 8);
+    return `
+      <div class="detail-section">
+        <div class="panel-title-row">
+          <h4>Reparaciones historicas</h4>
+          <span class="muted">Mostrando ${visible.length} de ${maintenance.length}</span>
+        </div>
+        ${visible.map(maintenanceMini).join("") || empty("Sin reparaciones importadas.")}
+      </div>
+    `;
+  }
+  if (state.vehicleDetailTab === "history") {
+    return `<div class="detail-section"><h4>Historial de uso</h4>${assignments.slice(0, 12).map(assignmentMini).join("") || empty("Sin usos registrados.")}</div>`;
+  }
+  if (state.vehicleDetailTab === "damages") {
+    return `<div class="detail-section"><h4>Danos e irregularidades abiertas</h4>${incidents.map(incidentMini).join("") || empty("Sin danos abiertos.")}</div>`;
+  }
+  return `
+    <div class="grid-3 detail-section-grid">
+      <div>
+        <h4>Documentacion critica</h4>
+        ${documents.filter((item) => expiryState(item.expiresAt) !== "vigente").slice(0, 5).map(documentMini).join("") || empty("Sin vencimientos criticos.")}
+      </div>
+      <div>
+        <h4>Equipamiento</h4>
+        ${equipment.slice(0, 5).map(equipmentMini).join("") || empty("Sin equipamiento importado.")}
+      </div>
+      <div>
+        <h4>Ultimas reparaciones</h4>
+        ${maintenance.slice(0, 5).map(maintenanceMini).join("") || empty("Sin reparaciones importadas.")}
+      </div>
+    </div>
   `;
 }
 
@@ -705,6 +734,12 @@ async function handleAction(action, button) {
   }
   if (action === "vehicle-detail") {
     state.vehicleId = button.dataset.vehicleId;
+    state.vehicleDetailTab = "summary";
+    render();
+    requestAnimationFrame(() => document.getElementById("vehicleDetail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+  if (action === "detail-tab") {
+    state.vehicleDetailTab = button.dataset.tab || "summary";
     render();
     requestAnimationFrame(() => document.getElementById("vehicleDetail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -737,6 +772,7 @@ async function handleAction(action, button) {
   }
   if (action === "clear-detail") {
     state.vehicleId = "";
+    state.vehicleDetailTab = "summary";
     render();
   }
 }
