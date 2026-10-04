@@ -394,6 +394,14 @@ drop trigger if exists audit_vehicle_documents on vehicle_documents;
 create trigger audit_vehicle_documents after insert or update or delete on vehicle_documents
 for each row execute function write_audit_log();
 
+drop trigger if exists audit_checklist_templates on checklist_templates;
+create trigger audit_checklist_templates after insert or update or delete on checklist_templates
+for each row execute function write_audit_log();
+
+drop trigger if exists audit_checklist_items on checklist_items;
+create trigger audit_checklist_items after insert or update or delete on checklist_items
+for each row execute function write_audit_log();
+
 drop trigger if exists audit_vehicle_equipment on vehicle_equipment;
 create trigger audit_vehicle_equipment after insert or update or delete on vehicle_equipment
 for each row execute function write_audit_log();

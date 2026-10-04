@@ -182,6 +182,29 @@
     };
   }
 
+  function mapChecklistTemplate(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      vehicleType: row.vehicle_type || "",
+      stage: row.stage,
+      isActive: row.is_active,
+    };
+  }
+
+  function mapChecklistItem(row) {
+    return {
+      id: row.id,
+      templateId: row.template_id,
+      stage: row.checklist_templates?.stage || row.stage || "",
+      category: row.category,
+      label: row.label,
+      appliesToVehicleType: row.applies_to_vehicle_type || "",
+      sortOrder: row.sort_order || 0,
+      isActive: row.is_active,
+    };
+  }
+
   async function currentProfile() {
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) return null;
@@ -205,7 +228,7 @@
   }
 
   async function loadRuntime() {
-    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, profilesResult, auditResult] = await Promise.all([
+    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, profilesResult, auditResult, checklistTemplatesResult, checklistItemsResult] = await Promise.all([
       client.from("vehicles").select("*").eq("is_active", true).order("domain"),
       client.from("employees").select("*").eq("is_active", true).order("full_name"),
       client.from("vehicle_assignments").select("*, vehicles(domain), employees(employee_number, full_name)").order("started_at", { ascending: false }).limit(500),
@@ -215,9 +238,11 @@
       client.from("vehicle_equipment").select("*").order("equipment_name", { ascending: true }),
       client.from("profiles").select("*, employees(employee_number, full_name)").order("display_name", { ascending: true }),
       client.from("audit_logs").select("*, actor_profile:profiles!audit_logs_actor_id_fkey(display_name)").order("created_at", { ascending: false }).limit(500),
+      client.from("checklist_templates").select("*").order("stage", { ascending: true }),
+      client.from("checklist_items").select("*, checklist_templates(stage)").order("sort_order", { ascending: true }),
     ]);
 
-    const firstError = [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult].find((result) => result.error);
+    const firstError = [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, checklistTemplatesResult, checklistItemsResult].find((result) => result.error);
     if (firstError) throw firstError.error;
 
     const assignments = assignmentsResult.data.map(mapAssignment);
@@ -251,6 +276,8 @@
       equipment,
       profiles: profilesResult.error ? [] : profilesResult.data.map(mapProfile),
       auditLogs: auditResult.error ? [] : auditResult.data.map(mapAuditLog),
+      checklistTemplates: checklistTemplatesResult.data.map(mapChecklistTemplate),
+      checklistItems: checklistItemsResult.data.map(mapChecklistItem),
     };
   }
 
@@ -387,6 +414,24 @@
     return mapProfile(data);
   }
 
+  async function saveChecklistItem(item) {
+    if (!enabled) return item;
+    const payload = {
+      template_id: item.templateId,
+      category: item.category,
+      label: item.label,
+      applies_to_vehicle_type: item.appliesToVehicleType || null,
+      sort_order: item.sortOrder || 0,
+      is_active: item.isActive,
+    };
+    const query = item.id
+      ? client.from("checklist_items").update(payload).eq("id", item.id).select("*, checklist_templates(stage)").single()
+      : client.from("checklist_items").insert(payload).select("*, checklist_templates(stage)").single();
+    const { data, error } = await query;
+    if (error) throw error;
+    return mapChecklistItem(data);
+  }
+
   function groupBy(items, key) {
     return items.reduce((acc, item) => {
       const value = item[key];
@@ -414,5 +459,6 @@
     deactivateVehicle,
     saveEmployee,
     updateProfileRole,
+    saveChecklistItem,
   };
 })();

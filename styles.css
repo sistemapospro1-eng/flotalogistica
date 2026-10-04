@@ -411,6 +411,32 @@ button {
   font-size: 13px;
 }
 
+.checklist-admin-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.checklist-item-form {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(160px, 1.4fr) minmax(120px, 1fr) 86px 112px auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.checklist-item-form .field {
+  gap: 4px;
+}
+
+.checklist-item-form input,
+.checklist-item-form select {
+  padding: 9px 10px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -751,6 +777,10 @@ tr:last-child td { border-bottom: 0; }
   }
 
   .check-row {
+    grid-template-columns: 1fr;
+  }
+
+  .checklist-item-form {
     grid-template-columns: 1fr;
   }
 }

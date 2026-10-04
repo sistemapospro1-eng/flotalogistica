@@ -45,6 +45,8 @@ function loadRuntime() {
     maintenance: saved.maintenance || buildSeedMaintenance(seedData.vehicles || []),
     profiles: saved.profiles || [],
     auditLogs: saved.auditLogs || [],
+    checklistTemplates: saved.checklistTemplates || [],
+    checklistItems: saved.checklistItems || [],
   });
 }
 
@@ -60,6 +62,8 @@ function saveRuntime() {
     incidents: runtime.incidents,
     maintenance: runtime.maintenance,
     auditLogs: runtime.auditLogs,
+    checklistTemplates: runtime.checklistTemplates,
+    checklistItems: runtime.checklistItems,
   }));
 }
 
@@ -218,6 +222,7 @@ function render() {
           ${isAdmin ? navButton("incidents", "Danos") : ""}
           ${isAdmin ? navButton("maintenance", "Mantenimiento") : ""}
           ${isAdmin ? navButton("reports", "Reportes") : ""}
+          ${canManageUsers ? navButton("checklist", "Checklist") : ""}
           ${canManageUsers ? navButton("users", "Usuarios") : ""}
           ${canViewAudit ? navButton("audit", "Auditoria") : ""}
           ${navButton("driver", isAdmin ? "Modo conductor" : "Mi turno")}
@@ -309,6 +314,7 @@ function renderView() {
   if (state.view === "incidents") return renderIncidents();
   if (state.view === "maintenance") return renderMaintenance();
   if (state.view === "reports") return renderReports();
+  if (state.view === "checklist") return renderChecklistAdmin();
   if (state.view === "users") return renderUsers();
   if (state.view === "audit") return renderAudit();
   if (state.view === "driver") return renderDriver();
@@ -564,6 +570,56 @@ function renderReports() {
   `;
 }
 
+function renderChecklistAdmin() {
+  return `
+    ${topbar("Checklist configurable")}
+    <section class="grid-2">
+      ${renderChecklistManager("start", "Control inicial")}
+      ${renderChecklistManager("end", "Control final")}
+    </section>
+  `;
+}
+
+function renderChecklistManager(stage, title) {
+  const template = getChecklistTemplate(stage);
+  const items = (runtime.checklistItems || [])
+    .filter((item) => item.stage === stage)
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  return `
+    <div class="panel">
+      <div class="panel-title-row">
+        <h3>${escapeHtml(title)}</h3>
+        <span class="badge ok">${items.filter((item) => item.isActive).length} activos</span>
+      </div>
+      <div class="checklist-admin-list">
+        ${items.map((item) => checklistItemForm(item, stage, template?.id)).join("") || empty("Sin items cargados. Agrega el primero abajo.")}
+      </div>
+      ${checklistItemForm(null, stage, template?.id)}
+      <p class="muted role-note">Tipo de vehiculo es opcional. Si queda vacio, el item aplica a todos.</p>
+    </div>
+  `;
+}
+
+function checklistItemForm(item, stage, templateId) {
+  const isNew = !item;
+  return `
+    <form class="checklist-item-form" data-checklist-item="${escapeAttr(item?.id || "new")}">
+      <input type="hidden" name="id" value="${escapeAttr(item?.id || "")}">
+      <input type="hidden" name="stage" value="${escapeAttr(stage)}">
+      <input type="hidden" name="templateId" value="${escapeAttr(item?.templateId || templateId || "")}">
+      <label class="field"><span>Categoria</span><input name="category" required value="${escapeAttr(item?.category || "")}" placeholder="Ej. Luces"></label>
+      <label class="field"><span>Item</span><input name="label" required value="${escapeAttr(item?.label || "")}" placeholder="Ej. Stop"></label>
+      <label class="field"><span>Tipo vehiculo</span><input name="vehicleType" value="${escapeAttr(item?.appliesToVehicleType || "")}" placeholder="Camioneta, camion, auto"></label>
+      <label class="field"><span>Orden</span><input name="sortOrder" type="number" value="${escapeAttr(item?.sortOrder ?? 0)}"></label>
+      <label class="field"><span>Estado</span><select name="isActive">
+        <option value="true" ${item?.isActive !== false ? "selected" : ""}>Activo</option>
+        <option value="false" ${item?.isActive === false ? "selected" : ""}>Inactivo</option>
+      </select></label>
+      <button class="btn ${isNew ? "" : "secondary"}" type="submit">${isNew ? "Agregar" : "Guardar"}</button>
+    </form>
+  `;
+}
+
 function renderUsers() {
   const roles = ["driver", "admin", "supervisor", "maintenance", "auditor", "super_admin"];
   const query = normalize(state.query);
@@ -642,7 +698,7 @@ function startAssignmentForm() {
         <label class="field"><span>Base o zona de retiro</span><input name="locationStart" required placeholder="Ej. Primera Junta, Quilmes"></label>
       </div>
       <div class="notice">El kilometraje inicial no puede ser menor al ultimo registrado sin generar una advertencia auditable.</div>
-      ${renderChecklist("start")}
+      ${renderChecklist("start", selected)}
       <label class="field"><span>Novedades detectadas al recibir</span><textarea name="startNotes" placeholder="Registrar danos no listados como preexistentes, faltantes o advertencias."></textarea></label>
       <label class="confirm-line"><input name="accepted" type="checkbox" required> Declaro haber verificado el estado del vehiculo y los elementos indicados en este control.</label>
       <button class="btn" type="submit" ${unavailable ? "disabled" : ""}>Confirmar recepcion</button>
@@ -678,7 +734,7 @@ function activeAssignmentView(assignment) {
         <label class="field"><span>Kilometraje final</span><input name="odometerEnd" type="number" min="${assignment.odometerStart}" required placeholder="Debe ser mayor o igual a ${assignment.odometerStart}"></label>
         <label class="field"><span>Base o zona de devolucion</span><input name="locationEnd" required placeholder="Ej. 12 de Octubre"></label>
       </div>
-      ${renderChecklist("end")}
+      ${renderChecklist("end", getVehicle(assignment.vehicleId))}
       <label class="field"><span>Novedades, danos nuevos o faltantes</span><textarea name="endNotes" placeholder="Detalle cualquier dano nuevo, faltante, desperfecto o irregularidad."></textarea></label>
       <label class="confirm-line"><input name="returned" type="checkbox" required> Confirmo la devolucion del vehiculo con la informacion declarada.</label>
       <button class="btn" type="submit">Devolver vehiculo</button>
@@ -715,18 +771,19 @@ function vehicleReceiptCard(vehicle, incidents) {
   `;
 }
 
-function renderChecklist(prefix) {
+function renderChecklist(prefix, vehicle) {
+  const groups = groupChecklistItems(getChecklistItems(prefix, vehicle?.type));
   return `
     <div>
       <div class="checklist-title">${prefix === "start" ? "Checklist inicial" : "Checklist final"}</div>
       <div class="checklist detailed">
-        ${checklistTemplate.map(([category, items]) => `
+        ${groups.map(([category, items]) => `
           <section class="check-group">
-            <h4>${category}</h4>
+            <h4>${escapeHtml(category)}</h4>
             ${items.map((item) => `
               <label class="check-row">
-                <span>${item}</span>
-                <select name="${prefix}_${slug(category)}_${slug(item)}">
+                <span>${escapeHtml(item.label)}</span>
+                <select name="${prefix}_${slug(category)}_${slug(item.label)}">
                   ${checklistStatuses.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}
                 </select>
               </label>
@@ -768,6 +825,10 @@ function bindCommon() {
 
   const driverForm = document.getElementById("driverForm");
   if (driverForm) driverForm.addEventListener("submit", submitDriverForm);
+
+  document.querySelectorAll(".checklist-item-form").forEach((form) => {
+    form.addEventListener("submit", submitChecklistItemForm);
+  });
 
   document.querySelectorAll("[data-role-change]").forEach((select) => {
     select.addEventListener("change", () => submitRoleChange(select.dataset.roleChange, select.value));
@@ -920,6 +981,38 @@ async function submitRoleChange(profileId, role) {
   }
 }
 
+async function submitChecklistItemForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const item = {
+    id: String(form.get("id") || ""),
+    stage: String(form.get("stage") || "start"),
+    templateId: String(form.get("templateId") || ""),
+    category: String(form.get("category") || "").trim(),
+    label: String(form.get("label") || "").trim(),
+    appliesToVehicleType: String(form.get("vehicleType") || "").trim(),
+    sortOrder: Number(form.get("sortOrder") || 0),
+    isActive: String(form.get("isActive")) === "true",
+  };
+  if (!item.templateId) {
+    toast("Primero debe existir una plantilla de checklist en Supabase.");
+    return;
+  }
+  try {
+    const saved = state.dataMode === "supabase" ? await window.fleetSupabase.saveChecklistItem(item) : item;
+    const nextItem = { ...item, ...saved };
+    runtime.checklistItems = item.id
+      ? (runtime.checklistItems || []).map((current) => current.id === item.id ? nextItem : current)
+      : [nextItem, ...(runtime.checklistItems || [])];
+    addAudit(item.id ? "checklist_item_updated" : "checklist_item_created", state.user.username, "checklist_items", nextItem.id || nextItem.label);
+    saveRuntime();
+    toast(item.id ? "Item de checklist actualizado." : "Item de checklist agregado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo guardar el item.");
+  }
+}
+
 async function submitStartAssignment(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -927,7 +1020,7 @@ async function submitStartAssignment(event) {
   if (!vehicle || vehicle.activeAssignmentId) return;
 
   const odometerStart = Number(form.get("odometerStart"));
-  const checklist = readChecklist(form, "start");
+  const checklist = readChecklist(form, "start", vehicle.type);
   const severity = checklistSeverity(checklist);
   const preexisting = getOpenIncidents(vehicle.id);
   const now = new Date().toISOString();
@@ -984,7 +1077,7 @@ async function submitCloseAssignment(event) {
   if (!assignment) return;
   const vehicle = getVehicle(assignment.vehicleId);
   const odometerEnd = Number(form.get("odometerEnd"));
-  const checklist = readChecklist(form, "end");
+  const checklist = readChecklist(form, "end", vehicle?.type);
   const severity = checklistSeverity(checklist);
   const now = new Date().toISOString();
 
@@ -1017,11 +1110,11 @@ async function submitCloseAssignment(event) {
   render();
 }
 
-function readChecklist(form, prefix) {
+function readChecklist(form, prefix, vehicleType = "") {
   const values = {};
-  checklistTemplate.forEach(([category, items]) => {
+  groupChecklistItems(getChecklistItems(prefix, vehicleType)).forEach(([category, items]) => {
     items.forEach((item) => {
-      values[`${category} - ${item}`] = String(form.get(`${prefix}_${slug(category)}_${slug(item)}`) || "correcto");
+      values[`${category} - ${item.label}`] = String(form.get(`${prefix}_${slug(category)}_${slug(item.label)}`) || "correcto");
     });
   });
   return values;
@@ -1394,6 +1487,48 @@ function groupCount(items, key) {
 
 function sortDesc(key) {
   return (a, b) => String(b[key] || "").localeCompare(String(a[key] || ""));
+}
+
+function getChecklistTemplate(stage) {
+  return (runtime.checklistTemplates || []).find((template) => template.stage === stage && template.isActive !== false)
+    || (runtime.checklistTemplates || []).find((template) => template.stage === stage);
+}
+
+function getChecklistItems(stage, vehicleType = "", includeInactive = false) {
+  const items = (runtime.checklistItems || [])
+    .filter((item) => item.stage === stage)
+    .filter((item) => includeInactive || item.isActive !== false)
+    .filter((item) => !vehicleType || !item.appliesToVehicleType || normalize(item.appliesToVehicleType) === normalize(vehicleType));
+  const source = items.length ? items : fallbackChecklistItems(stage);
+  return source.slice().sort((a, b) => {
+    const order = Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
+    if (order) return order;
+    return `${a.category}${a.label}`.localeCompare(`${b.category}${b.label}`);
+  });
+}
+
+function fallbackChecklistItems(stage) {
+  return checklistTemplate.flatMap(([category, items], categoryIndex) => (
+    items.map((label, itemIndex) => ({
+      id: `fallback-${stage}-${slug(category)}-${slug(label)}`,
+      stage,
+      templateId: "",
+      category,
+      label,
+      appliesToVehicleType: "",
+      sortOrder: categoryIndex * 100 + itemIndex,
+      isActive: true,
+    }))
+  ));
+}
+
+function groupChecklistItems(items) {
+  const groups = new Map();
+  items.forEach((item) => {
+    if (!groups.has(item.category)) groups.set(item.category, []);
+    groups.get(item.category).push(item);
+  });
+  return Array.from(groups.entries());
 }
 
 function formatDate(value) {
