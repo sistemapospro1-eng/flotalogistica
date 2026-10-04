@@ -607,7 +607,7 @@ function renderReports() {
   const totalKm = assignments.reduce((sum, item) => sum + Number(item.distance || 0), 0);
   const openDamages = getFilteredIncidentsForReports().length;
   return `
-    ${topbar("Reportes", `<button class="btn" data-action="export">Exportar CSV</button>`)}
+    ${topbar("Reportes", `<div class="topbar-actions"><button class="btn secondary" data-action="export-excel">Exportar Excel</button><button class="btn" data-action="export">Exportar CSV</button></div>`)}
     ${reportFilters()}
     <section class="grid-3">
       <div class="panel"><h3>Usos registrados</h3><strong class="big">${assignments.length}</strong><p class="muted">Asignaciones historicas.</p></div>
@@ -1029,6 +1029,7 @@ async function handleAction(action, button) {
     render();
   }
   if (action === "export") exportCsv();
+  if (action === "export-excel") exportExcel();
   if (action === "reset") {
     localStorage.removeItem(storageKey);
     runtime = loadRuntime();
@@ -1934,6 +1935,79 @@ function exportReportsCsv() {
   link.download = `reporte-flota-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function exportExcel() {
+  if (!window.XLSX) {
+    toast("No se cargo la libreria de Excel. Actualiza la pagina e intenta nuevamente.");
+    return;
+  }
+  const workbook = XLSX.utils.book_new();
+  const sheets = reportWorkbookData();
+  Object.entries(sheets).forEach(([name, rows]) => {
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, name);
+  });
+  XLSX.writeFile(workbook, `reporte-flota-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function reportWorkbookData() {
+  return {
+    Usos: getReportAssignments().map((item) => ({
+      Patente: item.domain,
+      Conductor: item.driver,
+      Legajo: item.employeeId,
+      Inicio: formatDateTime(item.startAt),
+      Fin: formatDateTime(item.endAt),
+      "Km inicial": item.odometerStart,
+      "Km final": item.odometerEnd ?? "",
+      Recorrido: item.distance ?? "",
+      Estado: item.status,
+      "Notas inicio": item.startNotes || "",
+      "Notas fin": item.endNotes || "",
+    })),
+    Vehiculos: getReportVehicles().map((item) => ({
+      Patente: item.domain,
+      Interno: item.internal,
+      Modelo: item.model,
+      Tipo: item.type,
+      Empresa: item.company,
+      Area: item.area,
+      Sector: item.sector,
+      Kilometraje: item.odometer,
+      Estado: item.status,
+    })),
+    Documentacion: getReportDocuments().map((item) => {
+      const vehicle = getVehicle(item.vehicleId) || {};
+      return {
+        Patente: vehicle.domain || "",
+        Tipo: item.type,
+        Numero: item.number || "",
+        Vence: formatDate(item.expiresAt),
+        Estado: expiryState(item.expiresAt),
+        Notas: item.notes || "",
+      };
+    }),
+    Equipamiento: getReportEquipment().map((item) => {
+      const vehicle = getVehicle(item.vehicleId) || {};
+      return {
+        Patente: vehicle.domain || "",
+        Elemento: item.name,
+        Esperado: item.expected ? "Si" : "No",
+        Presente: item.present ? "Si" : "No",
+        Vence: formatDate(item.expiresAt),
+        Estado: item.present === false ? "faltante" : expiryState(item.expiresAt),
+        Notas: item.notes || "",
+      };
+    }),
+    Reparaciones: getReportMaintenance().map((item) => ({
+      Fecha: formatDate(item.enteredAt || item.createdAt),
+      Patente: item.domain,
+      Tipo: item.type,
+      Detalle: item.detail,
+      Estado: item.status,
+    })),
+  };
 }
 
 function groupCount(items, key) {
