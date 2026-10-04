@@ -598,6 +598,10 @@ function renderMaintenance() {
 
 function renderReports() {
   const assignments = getReportAssignments();
+  const vehicles = getReportVehicles();
+  const documents = getReportDocuments();
+  const equipment = getReportEquipment();
+  const maintenance = getReportMaintenance();
   const byVehicle = groupCount(assignments, "domain");
   const byDriver = groupCount(assignments, "driver");
   const totalKm = assignments.reduce((sum, item) => sum + Number(item.distance || 0), 0);
@@ -610,9 +614,26 @@ function renderReports() {
       <div class="panel"><h3>Kilometros cerrados</h3><strong class="big">${totalKm}</strong><p class="muted">Solo usos con devolucion.</p></div>
       <div class="panel"><h3>Danos abiertos</h3><strong class="big">${openDamages}</strong><p class="muted">Filtrados por patente/area cuando aplica.</p></div>
     </section>
+    <section class="grid-3" style="margin-top:16px">
+      <div class="panel"><h3>Vehiculos filtrados</h3><strong class="big">${vehicles.length}</strong><p class="muted">Unidades por busqueda y area.</p></div>
+      <div class="panel"><h3>Documentacion critica</h3><strong class="big">${documents.length}</strong><p class="muted">Vencida, proxima o sin fecha.</p></div>
+      <div class="panel"><h3>Equipamiento critico</h3><strong class="big">${equipment.length}</strong><p class="muted">Faltante, vencido o proximo.</p></div>
+    </section>
     <section class="grid-2" style="margin-top:16px">
       <div class="panel"><h3>Uso por vehiculo</h3>${miniTable(byVehicle, ["Patente", "Usos"])}</div>
       <div class="panel"><h3>Uso por conductor</h3>${miniTable(byDriver, ["Conductor", "Usos"])}</div>
+    </section>
+    <section class="grid-2" style="margin-top:16px">
+      <div class="panel"><h3>Vehiculos por tipo</h3>${miniTable(groupCount(vehicles, "type"), ["Tipo", "Cantidad"])}</div>
+      <div class="panel"><h3>Vehiculos por empresa</h3>${miniTable(groupCount(vehicles, "company"), ["Empresa", "Cantidad"])}</div>
+    </section>
+    <section class="grid-2" style="margin-top:16px">
+      <div class="panel"><h3>Documentacion a revisar</h3><div class="table-wrap">${documentReportTable(documents)}</div></div>
+      <div class="panel"><h3>Equipamiento y matafuegos</h3><div class="table-wrap">${equipmentReportTable(equipment)}</div></div>
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <h3>Reparaciones importadas</h3>
+      <div class="table-wrap">${maintenanceReportTable(maintenance)}</div>
     </section>
     <section class="panel" style="margin-top:16px">
       <h3>Historial completo</h3>
@@ -1503,6 +1524,59 @@ function getFilteredIncidentsForReports() {
   });
 }
 
+function getReportVehicles() {
+  const query = normalize(state.query);
+  return runtime.vehicles
+    .filter((vehicle) => {
+      const haystack = normalize([vehicle.domain, vehicle.internal, vehicle.model, vehicle.type, vehicle.company, vehicle.area, vehicle.sector].join(" "));
+      if (query && !haystack.includes(query)) return false;
+      if (state.area !== "Todas" && vehicle.area !== state.area) return false;
+      return true;
+    })
+    .sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+function getReportDocuments() {
+  const vehicleIds = new Set(getReportVehicles().map((vehicle) => vehicle.id));
+  return (runtime.documents || [])
+    .filter((item) => vehicleIds.has(item.vehicleId))
+    .filter((item) => {
+      const stateName = expiryState(item.expiresAt);
+      return stateName !== "vigente" || normalize(item.status).includes("venc");
+    })
+    .filter((item) => dateInReportRange(item.expiresAt))
+    .sort((a, b) => String(a.expiresAt || "").localeCompare(String(b.expiresAt || "")));
+}
+
+function getReportEquipment() {
+  const vehicleIds = new Set(getReportVehicles().map((vehicle) => vehicle.id));
+  return (runtime.equipment || [])
+    .filter((item) => vehicleIds.has(item.vehicleId))
+    .filter((item) => item.present === false || item.expected === false || (item.expiresAt && expiryState(item.expiresAt) !== "vigente"))
+    .filter((item) => dateInReportRange(item.expiresAt))
+    .sort((a, b) => String(a.expiresAt || "").localeCompare(String(b.expiresAt || "")));
+}
+
+function getReportMaintenance() {
+  const vehicleIds = new Set(getReportVehicles().map((vehicle) => vehicle.id));
+  return (runtime.maintenance || [])
+    .filter((item) => vehicleIds.has(item.vehicleId))
+    .filter((item) => dateInReportRange(item.enteredAt || item.createdAt))
+    .sort(sortDesc("enteredAt"))
+    .slice(0, 200);
+}
+
+function dateInReportRange(value) {
+  if (!value || (!state.reportFrom && !state.reportTo)) return true;
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return true;
+  const from = state.reportFrom ? new Date(`${state.reportFrom}T00:00:00`) : null;
+  const to = state.reportTo ? new Date(`${state.reportTo}T23:59:59`) : null;
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+}
+
 function getActiveAssignments() {
   return runtime.assignments.filter((item) => item.status === "active" && !item.endAt).sort(sortDesc("startAt"));
 }
@@ -1567,6 +1641,42 @@ function assignmentTable(assignments) {
     <table>
       <thead><tr><th>Patente</th><th>Conductor</th><th>Inicio</th><th>Fin</th><th>Km inicial</th><th>Km final</th><th>Recorrido</th><th>Estado</th></tr></thead>
       <tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.driver)}</td><td>${formatDateTime(item.startAt)}</td><td>${formatDateTime(item.endAt)}</td><td>${item.odometerStart}</td><td>${item.odometerEnd ?? "-"}</td><td>${item.distance ?? "-"}</td><td>${statusTextBadge(item.status)}</td></tr>`).join("") || `<tr><td colspan="8">${empty("Sin resultados para los filtros seleccionados.")}</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function documentReportTable(items) {
+  return `
+    <table>
+      <thead><tr><th>Patente</th><th>Tipo</th><th>Vence</th><th>Estado</th><th>Notas</th></tr></thead>
+      <tbody>${items.slice(0, 80).map((item) => {
+        const vehicle = getVehicle(item.vehicleId) || {};
+        const stateName = expiryState(item.expiresAt);
+        return `<tr><td>${escapeHtml(vehicle.domain || "-")}</td><td>${escapeHtml(item.type)}</td><td>${formatDate(item.expiresAt)}</td><td>${expiryBadge(stateName)}</td><td>${escapeHtml(item.notes || item.number || "")}</td></tr>`;
+      }).join("") || `<tr><td colspan="5">${empty("Sin documentacion critica para los filtros seleccionados.")}</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function equipmentReportTable(items) {
+  return `
+    <table>
+      <thead><tr><th>Patente</th><th>Elemento</th><th>Vence</th><th>Estado</th><th>Notas</th></tr></thead>
+      <tbody>${items.slice(0, 80).map((item) => {
+        const vehicle = getVehicle(item.vehicleId) || {};
+        const stateName = item.present === false ? "faltante" : expiryState(item.expiresAt);
+        const badge = stateName === "faltante" ? statusTextBadge("Faltante") : expiryBadge(stateName);
+        return `<tr><td>${escapeHtml(vehicle.domain || "-")}</td><td>${escapeHtml(item.name)}</td><td>${formatDate(item.expiresAt)}</td><td>${badge}</td><td>${escapeHtml(item.notes || "")}</td></tr>`;
+      }).join("") || `<tr><td colspan="5">${empty("Sin equipamiento critico para los filtros seleccionados.")}</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function maintenanceReportTable(items) {
+  return `
+    <table>
+      <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Detalle</th><th>Estado</th></tr></thead>
+      <tbody>${items.map((item) => `<tr><td>${formatDate(item.enteredAt || item.createdAt)}</td><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td><td>${statusTextBadge(item.status)}</td></tr>`).join("") || `<tr><td colspan="5">${empty("Sin reparaciones para los filtros seleccionados.")}</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -1712,7 +1822,11 @@ function statusBadge(status) {
 
 function statusTextBadge(status) {
   const normalized = normalize(status);
-  const kind = normalized.includes("pendiente") || normalized.includes("active") ? "warn" : normalized.includes("open") ? "danger" : "ok";
+  const kind = normalized.includes("faltante") || normalized.includes("open")
+    ? "danger"
+    : normalized.includes("pendiente") || normalized.includes("active")
+      ? "warn"
+      : "ok";
   const label = status === "active" ? "Activo" : status === "closed" ? "Cerrado" : status === "open" ? "Abierto" : status;
   return `<span class="badge ${kind}">${escapeHtml(label)}</span>`;
 }
@@ -1770,7 +1884,8 @@ function addAudit(action, user, entity, entityId) {
 }
 
 function exportCsv() {
-  const assignments = state.view === "reports" ? getReportAssignments() : runtime.assignments;
+  if (state.view === "reports") return exportReportsCsv();
+  const assignments = runtime.assignments;
   const rows = [
     ["patente", "conductor", "legajo", "inicio", "fin", "km_inicial", "km_final", "km_recorridos", "notas_inicio", "notas_fin"],
     ...assignments.map((item) => [item.domain, item.driver, item.employeeId, item.startAt, item.endAt || "", item.odometerStart, item.odometerEnd || "", item.distance || "", item.startNotes, item.endNotes]),
@@ -1780,6 +1895,43 @@ function exportCsv() {
   const link = document.createElement("a");
   link.href = url;
   link.download = `reporte-asignaciones-flota-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportReportsCsv() {
+  const sections = [
+    ["USOS"],
+    ["patente", "conductor", "legajo", "inicio", "fin", "km_inicial", "km_final", "km_recorridos", "notas_inicio", "notas_fin"],
+    ...getReportAssignments().map((item) => [item.domain, item.driver, item.employeeId, item.startAt, item.endAt || "", item.odometerStart, item.odometerEnd || "", item.distance || "", item.startNotes, item.endNotes]),
+    [],
+    ["VEHICULOS"],
+    ["patente", "interno", "modelo", "tipo", "empresa", "area", "sector", "km", "estado"],
+    ...getReportVehicles().map((item) => [item.domain, item.internal, item.model, item.type, item.company, item.area, item.sector, item.odometer, item.status]),
+    [],
+    ["DOCUMENTACION_CRITICA"],
+    ["patente", "tipo", "vence", "estado", "numero", "notas"],
+    ...getReportDocuments().map((item) => {
+      const vehicle = getVehicle(item.vehicleId) || {};
+      return [vehicle.domain || "", item.type, item.expiresAt || "", expiryState(item.expiresAt), item.number || "", item.notes || ""];
+    }),
+    [],
+    ["EQUIPAMIENTO_CRITICO"],
+    ["patente", "elemento", "vence", "presente", "esperado", "notas"],
+    ...getReportEquipment().map((item) => {
+      const vehicle = getVehicle(item.vehicleId) || {};
+      return [vehicle.domain || "", item.name, item.expiresAt || "", item.present ? "si" : "no", item.expected ? "si" : "no", item.notes || ""];
+    }),
+    [],
+    ["REPARACIONES"],
+    ["fecha", "patente", "tipo", "detalle", "estado"],
+    ...getReportMaintenance().map((item) => [item.enteredAt || item.createdAt || "", item.domain, item.type, item.detail, item.status]),
+  ];
+  const blob = new Blob([sections.map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `reporte-flota-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
