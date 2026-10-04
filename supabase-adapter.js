@@ -311,10 +311,9 @@
 
   async function signIn(username, password) {
     if (!enabled) return null;
-    if (!username.includes("@")) {
-      throw new Error("En modo Supabase el ingreso usa email y contrasena. Luego se puede agregar login por legajo con una API segura.");
-    }
-    const { error } = await client.auth.signInWithPassword({ email: username, password });
+    const login = String(username || "").trim();
+    const email = login.includes("@") ? login : `${login}@flotalogistica.local`;
+    const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return currentProfile();
   }

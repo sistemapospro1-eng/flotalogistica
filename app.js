@@ -275,14 +275,14 @@ function renderLogin() {
           <h2>Ingresar</h2>
           <p class="muted">Primera version sin GPS. El foco es responsabilidad e historial de uso.</p>
           <form class="form-grid" id="loginForm">
-            <label class="field"><span>${supabaseEnabled ? "Email" : "Usuario"}</span><input name="username" autocomplete="username" value="${supabaseEnabled ? "" : "admin"}"></label>
+            <label class="field"><span>${supabaseEnabled ? "Email o legajo" : "Usuario"}</span><input name="username" autocomplete="username" value="${supabaseEnabled ? "" : "admin"}"></label>
             <label class="field"><span>Contrasena</span><input name="password" type="password" autocomplete="current-password" value="${supabaseEnabled ? "" : "admin123"}"></label>
             <div class="error" id="loginError"></div>
             <button class="btn" type="submit">Ingresar</button>
           </form>
           <div class="hint">
             ${supabaseEnabled
-              ? "Modo produccion: usuarios reales creados en Supabase Auth."
+              ? "Modo produccion: admin con email; choferes pueden ingresar con legajo si su usuario fue creado como legajo@flotalogistica.local."
               : "Admin: <strong>admin</strong> / <strong>admin123</strong><br>Conductor demo: <strong>chofer1</strong> / <strong>flota123</strong><br>Personal importado: legajo / ultimos 4 digitos del CUIL."}
           </div>
         </div>
