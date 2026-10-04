@@ -322,6 +322,12 @@
     if (enabled) await client.auth.signOut();
   }
 
+  async function updatePassword(newPassword) {
+    if (!enabled) return;
+    const { error } = await client.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  }
+
   async function saveAssignmentStarted(assignment, vehicle, severity) {
     if (!enabled || !assignment.employeeUuid) return;
     const { error } = await client.from("vehicle_assignments").insert({
@@ -600,6 +606,7 @@
     loadRuntime,
     signIn,
     signOut,
+    updatePassword,
     saveAssignmentStarted,
     saveAssignmentClosed,
     saveIncident,

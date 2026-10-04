@@ -14,6 +14,7 @@ const state = {
   editVehicleId: "",
   editDriverId: "",
   editMaintenanceId: "",
+  previousView: "dashboard",
   loading: false,
   dataMode: window.fleetSupabase?.isEnabled() ? "supabase" : "demo",
 };
@@ -230,7 +231,7 @@ function render() {
   const isAdmin = state.user.role === "admin";
   const canManageUsers = ["admin", "super_admin"].includes(appRole);
   const canViewAudit = ["admin", "super_admin", "auditor"].includes(appRole);
-  if (!isAdmin) state.view = "driver";
+  if (!isAdmin && state.view !== "password") state.view = "driver";
 
   app.innerHTML = `
     <div class="layout">
@@ -250,6 +251,7 @@ function render() {
         </nav>
         <div class="user-box">
           <div><strong>${escapeHtml(state.user.name)}</strong><br><span class="muted">${isAdmin ? roleLabel(appRole) : "Conductor"}</span></div>
+          <button class="btn secondary" data-action="show-password-form">Cambiar clave</button>
           <button class="btn secondary" data-action="logout">Cerrar sesion</button>
         </div>
       </aside>
@@ -338,6 +340,7 @@ function renderView() {
   if (state.view === "checklist") return renderChecklistAdmin();
   if (state.view === "users") return renderUsers();
   if (state.view === "audit") return renderAudit();
+  if (state.view === "password") return renderPasswordChange();
   if (state.view === "driver") return renderDriver();
   return renderDashboard();
 }
@@ -919,6 +922,21 @@ function renderDriver() {
   `;
 }
 
+function renderPasswordChange() {
+  return `
+    ${topbar("Cambiar clave")}
+    <form class="panel form-grid password-panel" id="passwordForm">
+      <p class="muted">La nueva clave se aplica a tu usuario actual. Debe tener al menos 8 caracteres.</p>
+      <label class="field"><span>Nueva clave</span><input name="newPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label class="field"><span>Repetir nueva clave</span><input name="confirmPassword" type="password" autocomplete="new-password" required minlength="8"></label>
+      <div class="row-actions">
+        <button class="btn" type="submit">Guardar clave</button>
+        <button class="btn secondary" type="button" data-action="cancel-password-form">Cancelar</button>
+      </div>
+    </form>
+  `;
+}
+
 function startAssignmentForm() {
   const vehicles = runtime.vehicles.slice().sort((a, b) => a.domain.localeCompare(b.domain));
   const selected = getVehicle(state.vehicleId) || vehicles[0];
@@ -1076,6 +1094,9 @@ function bindCommon() {
   const maintenanceFormNode = document.getElementById("maintenanceForm");
   if (maintenanceFormNode) maintenanceFormNode.addEventListener("submit", submitMaintenanceForm);
 
+  const passwordForm = document.getElementById("passwordForm");
+  if (passwordForm) passwordForm.addEventListener("submit", submitPasswordForm);
+
   document.querySelectorAll(".document-form").forEach((form) => {
     form.addEventListener("submit", submitDocumentForm);
   });
@@ -1100,6 +1121,15 @@ async function handleAction(action, button) {
     sessionStorage.removeItem("gestion-flota-session");
     state.user = null;
     state.view = "dashboard";
+    render();
+  }
+  if (action === "show-password-form") {
+    state.previousView = state.view === "password" ? state.previousView : state.view;
+    state.view = "password";
+    render();
+  }
+  if (action === "cancel-password-form") {
+    state.view = state.previousView || (state.user?.role === "admin" ? "dashboard" : "driver");
     render();
   }
   if (action === "export") exportCsv();
@@ -1364,6 +1394,29 @@ async function resetDriverPassword(profileId) {
   try {
     await window.fleetSupabase.createDriverUsers({ defaultPassword: password, profileId });
     toast(`Clave actualizada para ${profile.displayName}.`);
+  } catch (error) {
+    toast(error.message || "No se pudo actualizar la clave.");
+  }
+}
+
+async function submitPasswordForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const newPassword = String(form.get("newPassword") || "");
+  const confirmPassword = String(form.get("confirmPassword") || "");
+  if (newPassword.length < 8) {
+    toast("La clave debe tener al menos 8 caracteres.");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    toast("Las claves no coinciden.");
+    return;
+  }
+  try {
+    if (state.dataMode === "supabase") await window.fleetSupabase.updatePassword(newPassword);
+    toast("Clave actualizada.");
+    state.view = state.previousView || (state.user?.role === "admin" ? "dashboard" : "driver");
+    render();
   } catch (error) {
     toast(error.message || "No se pudo actualizar la clave.");
   }
