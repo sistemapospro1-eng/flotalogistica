@@ -1328,14 +1328,14 @@ async function createDriverUsersBulk() {
     return;
   }
   try {
-    const result = await window.fleetSupabase.createDriverUsers({ defaultPassword: password });
+    const result = await window.fleetSupabase.createDriverUsers({ defaultPassword: password, limit: 50 });
     runtime = reconcileRuntime(await window.fleetSupabase.loadRuntime());
     const created = result?.created?.length || 0;
     const linked = result?.linked?.length || 0;
     const existing = result?.existing?.length || 0;
     const skipped = result?.skipped?.length || 0;
     const errors = result?.errors?.length || 0;
-    toast(`Usuarios: ${created} creados, ${linked} vinculados, ${existing} existentes, ${skipped} omitidos, ${errors} errores.`);
+    toast(`Tanda procesada: ${created} creados, ${linked} vinculados, ${existing} existentes, ${skipped} omitidos, ${errors} errores.`);
     render();
   } catch (error) {
     toast(error.message || "No se pudieron crear los usuarios.");
