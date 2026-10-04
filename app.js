@@ -847,8 +847,10 @@ function renderUsers() {
   const query = normalize(state.query);
   const linkedEmployeeIds = new Set((runtime.profiles || []).map((profile) => profile.employeeId).filter(Boolean));
   const pendingDriverUsers = (runtime.people || []).filter((person) => person.isActive !== false && !linkedEmployeeIds.has(person.employeeUuid || person.id));
-  const rows = (runtime.profiles || [])
+  const filteredRows = (runtime.profiles || [])
     .filter((profile) => !query || normalize([profile.displayName, profile.username, profile.employeeNumber, profile.employeeName, profile.role].join(" ")).includes(query));
+  const rows = query ? filteredRows.slice(0, 120) : filteredRows.slice(0, 80);
+  const totalProfiles = (runtime.profiles || []).length;
   return `
     ${topbar("Usuarios y roles")}
     <div class="panel">
@@ -861,6 +863,7 @@ function renderUsers() {
         <button class="btn" data-action="bulk-create-drivers" ${state.dataMode !== "supabase" || !pendingDriverUsers.length ? "disabled" : ""}>Crear pendientes</button>
       </div>
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Nombre, usuario, legajo o rol"></label></div>
+      <p class="muted role-note">Mostrando ${rows.length} de ${query ? filteredRows.length : totalProfiles}. Para editar un chofer especifico, buscalo por legajo o nombre.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Usuario</th><th>Empleado vinculado</th><th>Rol</th><th>Estado</th><th>Accion</th></tr></thead>
