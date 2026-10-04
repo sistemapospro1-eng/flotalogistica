@@ -118,8 +118,12 @@
       vehicleId: row.vehicle_id,
       domain: vehicle.domain || "",
       type: row.maintenance_type || "Mantenimiento",
-      status: row.status === "finished" ? "Finalizado" : "Pendiente",
+      status: row.status === "finished" ? "Finalizado" : row.status === "in_repair" ? "En curso" : row.status === "cancelled" ? "Cancelado" : "Pendiente",
+      statusValue: row.status,
+      provider: row.provider || "",
+      workshop: row.workshop || "",
       detail: row.detail || "",
+      cost: row.cost,
       createdAt: row.created_at,
       enteredAt: row.entered_at,
       retiredAt: row.retired_at,
@@ -462,6 +466,28 @@
     return mapEquipment(data);
   }
 
+  async function saveMaintenance(record) {
+    if (!enabled) return record;
+    const payload = {
+      vehicle_id: record.vehicleId,
+      status: record.statusValue || reverseMaintenanceStatus(record.status),
+      maintenance_type: record.type || null,
+      provider: record.provider || null,
+      workshop: record.workshop || null,
+      detail: record.detail,
+      cost: record.cost ?? null,
+      entered_at: record.enteredAt || null,
+      retired_at: record.retiredAt || null,
+      notes: record.notes || null,
+    };
+    const query = record.id
+      ? client.from("maintenance_records").update(payload).eq("id", record.id).select("*, vehicles(domain)").single()
+      : client.from("maintenance_records").insert(payload).select("*, vehicles(domain)").single();
+    const { data, error } = await query;
+    if (error) throw error;
+    return mapMaintenance(data);
+  }
+
   async function uploadVehicleEvidence(photo, file) {
     if (!enabled) return photo;
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "archivo";
@@ -538,6 +564,14 @@
     }, {});
   }
 
+  function reverseMaintenanceStatus(label) {
+    const normalized = normalize(label);
+    if (normalized.includes("curso") || normalized.includes("repair")) return "in_repair";
+    if (normalized.includes("final")) return "finished";
+    if (normalized.includes("cancel")) return "cancelled";
+    return "pending";
+  }
+
   function normalize(value) {
     return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
@@ -557,6 +591,7 @@
     saveEmployee,
     saveDocument,
     saveEquipment,
+    saveMaintenance,
     uploadVehicleEvidence,
     createEvidenceUrl,
     updateProfileRole,

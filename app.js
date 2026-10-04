@@ -13,6 +13,7 @@ const state = {
   vehicleDetailTab: "summary",
   editVehicleId: "",
   editDriverId: "",
+  editMaintenanceId: "",
   loading: false,
   dataMode: window.fleetSupabase?.isEnabled() ? "supabase" : "demo",
 };
@@ -581,18 +582,68 @@ function renderIncidents() {
 }
 
 function renderMaintenance() {
+  const query = normalize(state.query);
+  const rows = runtime.maintenance
+    .filter((item) => {
+      const vehicle = getVehicle(item.vehicleId) || {};
+      const haystack = normalize([item.domain, item.type, item.detail, item.status, item.provider, item.workshop, vehicle.area].join(" "));
+      if (query && !haystack.includes(query)) return false;
+      if (state.area !== "Todas" && vehicle.area !== state.area) return false;
+      return true;
+    })
+    .sort(sortDesc("createdAt"));
+  const editing = state.editMaintenanceId ? runtime.maintenance.find((item) => item.id === state.editMaintenanceId) : null;
   return `
-    ${topbar("Mantenimiento")}
+    ${topbar("Mantenimiento", `<button class="btn" data-action="new-maintenance">Nueva reparacion</button>`)}
+    ${state.editMaintenanceId === "new" || editing ? maintenanceForm(editing) : ""}
     <div class="panel">
+      ${toolbar()}
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Detalle</th><th>Estado</th></tr></thead>
-          <tbody>${runtime.maintenance.sort(sortDesc("createdAt")).map((item) => `
-            <tr><td>${formatDate(item.createdAt)}</td><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td><td>${statusTextBadge(item.status)}</td></tr>
-          `).join("")}</tbody>
+          <thead><tr><th>Fecha</th><th>Patente</th><th>Tipo</th><th>Proveedor/Taller</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
+          <tbody>${rows.map((item) => `
+            <tr>
+              <td>${formatDate(item.enteredAt || item.createdAt)}</td>
+              <td>${escapeHtml(item.domain)}</td>
+              <td>${escapeHtml(item.type)}</td>
+              <td>${escapeHtml([item.provider, item.workshop].filter(Boolean).join(" / ") || "-")}</td>
+              <td>${escapeHtml(item.detail)}</td>
+              <td>${statusTextBadge(item.status)}</td>
+              <td><button class="link-btn" data-action="edit-maintenance" data-maintenance-id="${escapeAttr(item.id)}">Editar</button></td>
+            </tr>
+          `).join("") || `<tr><td colspan="7">${empty("Sin reparaciones para los filtros seleccionados.")}</td></tr>`}</tbody>
         </table>
       </div>
     </div>
+  `;
+}
+
+function maintenanceForm(item) {
+  const isNew = !item;
+  const selectedVehicleId = item?.vehicleId || runtime.vehicles[0]?.id || "";
+  const statusOptions = [["pending", "Pendiente"], ["in_repair", "En curso"], ["finished", "Finalizado"], ["cancelled", "Cancelado"]];
+  return `
+    <form class="panel form-grid" id="maintenanceForm">
+      <div class="panel-title-row">
+        <h3>${isNew ? "Nueva reparacion / mantenimiento" : `Editar ${escapeHtml(item.domain)}`}</h3>
+        <button class="btn ghost" type="button" data-action="cancel-maintenance-form">Cerrar</button>
+      </div>
+      <div class="grid-2 compact">
+        <label class="field"><span>Vehiculo</span><select name="vehicleId" required>
+          ${runtime.vehicles.map((vehicle) => `<option value="${vehicle.id}" ${vehicle.id === selectedVehicleId ? "selected" : ""}>${escapeHtml(vehicle.domain)} | ${escapeHtml(vehicle.model || "")}</option>`).join("")}
+        </select></label>
+        <label class="field"><span>Estado</span><select name="status">${statusOptions.map(([value, label]) => `<option value="${value}" ${maintenanceStatusValue(item?.status) === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label class="field"><span>Tipo</span><input name="type" value="${escapeAttr(item?.type || "")}" placeholder="Preventivo, correctivo, service"></label>
+        <label class="field"><span>Fecha ingreso</span><input name="enteredAt" type="date" value="${escapeAttr(dateInputValue(item?.enteredAt || item?.createdAt))}"></label>
+        <label class="field"><span>Fecha salida</span><input name="retiredAt" type="date" value="${escapeAttr(dateInputValue(item?.retiredAt))}"></label>
+        <label class="field"><span>Costo</span><input name="cost" type="number" min="0" step="0.01" value="${escapeAttr(item?.cost || "")}"></label>
+        <label class="field"><span>Proveedor</span><input name="provider" value="${escapeAttr(item?.provider || "")}"></label>
+        <label class="field"><span>Taller</span><input name="workshop" value="${escapeAttr(item?.workshop || "")}"></label>
+      </div>
+      <label class="field"><span>Detalle</span><textarea name="detail" required>${escapeHtml(item?.detail || "")}</textarea></label>
+      <label class="field"><span>Notas</span><textarea name="notes">${escapeHtml(item?.notes || "")}</textarea></label>
+      <button class="btn" type="submit">${isNew ? "Crear registro" : "Guardar cambios"}</button>
+    </form>
   `;
 }
 
@@ -999,6 +1050,9 @@ function bindCommon() {
   const driverForm = document.getElementById("driverForm");
   if (driverForm) driverForm.addEventListener("submit", submitDriverForm);
 
+  const maintenanceFormNode = document.getElementById("maintenanceForm");
+  if (maintenanceFormNode) maintenanceFormNode.addEventListener("submit", submitMaintenanceForm);
+
   document.querySelectorAll(".document-form").forEach((form) => {
     form.addEventListener("submit", submitDocumentForm);
   });
@@ -1073,6 +1127,18 @@ async function handleAction(action, button) {
   }
   if (action === "cancel-driver-form") {
     state.editDriverId = "";
+    render();
+  }
+  if (action === "new-maintenance") {
+    state.editMaintenanceId = "new";
+    render();
+  }
+  if (action === "edit-maintenance") {
+    state.editMaintenanceId = button.dataset.maintenanceId;
+    render();
+  }
+  if (action === "cancel-maintenance-form") {
+    state.editMaintenanceId = "";
     render();
   }
   if (action === "clear-detail") {
@@ -1155,6 +1221,47 @@ async function submitDriverForm(event) {
   state.editDriverId = "";
   toast(existing ? "Conductor actualizado." : "Conductor creado.");
   render();
+}
+
+async function submitMaintenanceForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const existing = state.editMaintenanceId && state.editMaintenanceId !== "new"
+    ? runtime.maintenance.find((item) => item.id === state.editMaintenanceId)
+    : null;
+  const vehicle = getVehicle(String(form.get("vehicleId") || ""));
+  if (!vehicle) {
+    toast("Selecciona un vehiculo valido.");
+    return;
+  }
+  const record = {
+    id: existing?.id || "",
+    vehicleId: vehicle.id,
+    domain: vehicle.domain,
+    status: maintenanceStatusLabel(String(form.get("status") || "pending")),
+    statusValue: String(form.get("status") || "pending"),
+    type: String(form.get("type") || "Mantenimiento").trim(),
+    provider: String(form.get("provider") || "").trim(),
+    workshop: String(form.get("workshop") || "").trim(),
+    detail: String(form.get("detail") || "").trim(),
+    cost: form.get("cost") ? Number(form.get("cost")) : null,
+    enteredAt: String(form.get("enteredAt") || ""),
+    retiredAt: String(form.get("retiredAt") || ""),
+    notes: String(form.get("notes") || "").trim(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  };
+  try {
+    const saved = state.dataMode === "supabase" ? await window.fleetSupabase.saveMaintenance(record) : record;
+    const nextRecord = { ...record, ...saved };
+    runtime.maintenance = upsertById(runtime.maintenance || [], nextRecord);
+    addAudit(existing ? "maintenance_updated" : "maintenance_created", state.user.username, "maintenance_records", nextRecord.id || nextRecord.domain);
+    saveRuntime();
+    state.editMaintenanceId = "";
+    toast(existing ? "Mantenimiento actualizado." : "Mantenimiento creado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo guardar mantenimiento.");
+  }
 }
 
 async function submitRoleChange(profileId, role) {
@@ -2252,6 +2359,24 @@ function dateInputValue(value) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function maintenanceStatusLabel(value) {
+  const labels = {
+    pending: "Pendiente",
+    in_progress: "En curso",
+    finished: "Finalizado",
+    cancelled: "Cancelado",
+  };
+  return labels[value] || value || "Pendiente";
+}
+
+function maintenanceStatusValue(label) {
+  const normalized = normalize(label);
+  if (normalized.includes("curso") || normalized.includes("repair")) return "in_repair";
+  if (normalized.includes("final")) return "finished";
+  if (normalized.includes("cancel")) return "cancelled";
+  return "pending";
 }
 
 function slug(value) {
