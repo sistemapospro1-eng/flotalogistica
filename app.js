@@ -853,18 +853,25 @@ function renderUsers() {
       <div class="toolbar"><label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Nombre, usuario, legajo o rol"></label></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Usuario</th><th>Empleado</th><th>Rol</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>Empleado vinculado</th><th>Rol</th><th>Estado</th><th>Accion</th></tr></thead>
           <tbody>${rows.map((profile) => `
             <tr>
               <td><strong>${escapeHtml(profile.displayName)}</strong><br><span class="muted">${escapeHtml(profile.username || profile.id)}</span></td>
-              <td>${escapeHtml(profile.employeeName || "-")}<br><span class="muted">${escapeHtml(profile.employeeNumber || "")}</span></td>
-              <td><select class="inline-select" data-role-change="${profile.id}" ${profile.id === state.user.profileId ? "disabled" : ""}>${roles.map((role) => `<option value="${role}" ${profile.role === role ? "selected" : ""}>${roleLabel(role)}</option>`).join("")}</select></td>
-              <td>${profile.isActive ? statusTextBadge("Activo") : statusTextBadge("Inactivo")}</td>
+              <td><select class="inline-select user-employee-select" data-user-employee="${profile.id}">
+                <option value="">Sin vincular</option>
+                ${runtime.people.map((person) => `<option value="${person.employeeUuid || person.id || ""}" ${profile.employeeId === (person.employeeUuid || person.id) ? "selected" : ""}>${escapeHtml(person.employeeId)} | ${escapeHtml(person.name)}</option>`).join("")}
+              </select></td>
+              <td><select class="inline-select" data-user-role="${profile.id}" ${profile.id === state.user.profileId ? "disabled" : ""}>${roles.map((role) => `<option value="${role}" ${profile.role === role ? "selected" : ""}>${roleLabel(role)}</option>`).join("")}</select></td>
+              <td><select class="inline-select" data-user-active="${profile.id}" ${profile.id === state.user.profileId ? "disabled" : ""}>
+                <option value="true" ${profile.isActive ? "selected" : ""}>Activo</option>
+                <option value="false" ${!profile.isActive ? "selected" : ""}>Inactivo</option>
+              </select></td>
+              <td><button class="btn secondary" data-action="save-profile" data-profile-id="${escapeAttr(profile.id)}">Guardar</button></td>
             </tr>
-          `).join("") || `<tr><td colspan="4">${empty("No hay usuarios creados en Supabase Auth.")}</td></tr>`}</tbody>
+          `).join("") || `<tr><td colspan="5">${empty("No hay usuarios creados en Supabase Auth.")}</td></tr>`}</tbody>
         </table>
       </div>
-      <p class="muted role-note">Los usuarios se crean en Supabase Auth. Desde esta pantalla se administra el rol operativo que usa la aplicacion.</p>
+      <p class="muted role-note">Los usuarios se crean en Supabase Auth. Desde esta pantalla se vinculan a empleados, se administra el rol operativo y se activan o desactivan.</p>
     </div>
   `;
 }
@@ -1068,9 +1075,6 @@ function bindCommon() {
     form.addEventListener("submit", submitChecklistItemForm);
   });
 
-  document.querySelectorAll("[data-role-change]").forEach((select) => {
-    select.addEventListener("change", () => submitRoleChange(select.dataset.roleChange, select.value));
-  });
 }
 
 async function handleAction(action, button) {
@@ -1085,6 +1089,7 @@ async function handleAction(action, button) {
   if (action === "export") exportCsv();
   if (action === "export-excel") exportExcel();
   if (action === "export-pdf") exportPdf();
+  if (action === "save-profile") await submitProfileForm(button.dataset.profileId);
   if (action === "reset") {
     localStorage.removeItem(storageKey);
     runtime = loadRuntime();
@@ -1274,6 +1279,30 @@ async function submitRoleChange(profileId, role) {
   } catch (error) {
     toast(error.message || "No se pudo actualizar el rol.");
     render();
+  }
+}
+
+async function submitProfileForm(profileId) {
+  if (state.dataMode !== "supabase") return;
+  const profile = (runtime.profiles || []).find((item) => item.id === profileId);
+  if (!profile) return;
+  const selectorId = selectorEscape(profileId);
+  const role = document.querySelector(`[data-user-role="${selectorId}"]`)?.value || profile.role;
+  const employeeId = document.querySelector(`[data-user-employee="${selectorId}"]`)?.value || "";
+  const isActive = (document.querySelector(`[data-user-active="${selectorId}"]`)?.value || "true") === "true";
+  try {
+    const updated = await window.fleetSupabase.updateProfile({
+      id: profileId,
+      role,
+      employeeId,
+      isActive,
+    });
+    runtime.profiles = (runtime.profiles || []).map((item) => item.id === profileId ? updated : item);
+    addAudit("profile_updated", state.user.username, "profiles", profileId);
+    toast("Usuario actualizado.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo actualizar el usuario.");
   }
 }
 
@@ -2407,6 +2436,11 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
+}
+
+function selectorEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
 }
 
 function empty(text) {

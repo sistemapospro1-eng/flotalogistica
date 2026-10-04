@@ -527,10 +527,19 @@
 
   async function updateProfileRole(profileId, role) {
     if (!enabled) return;
+    return updateProfile({ id: profileId, role });
+  }
+
+  async function updateProfile(profile) {
+    if (!enabled) return profile;
+    const payload = {};
+    if (profile.role) payload.role = profile.role;
+    if ("employeeId" in profile) payload.employee_id = profile.employeeId || null;
+    if ("isActive" in profile) payload.is_active = profile.isActive;
     const { data, error } = await client
       .from("profiles")
-      .update({ role })
-      .eq("id", profileId)
+      .update(payload)
+      .eq("id", profile.id)
       .select("*, employees(employee_number, full_name)")
       .single();
     if (error) throw error;
@@ -595,6 +604,7 @@
     uploadVehicleEvidence,
     createEvidenceUrl,
     updateProfileRole,
+    updateProfile,
     saveChecklistItem,
   };
 })();
