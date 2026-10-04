@@ -153,6 +153,25 @@
     };
   }
 
+  function mapPhoto(row) {
+    return {
+      id: row.id,
+      vehicleId: row.vehicle_id,
+      assignmentId: row.assignment_id,
+      inspectionId: row.inspection_id,
+      incidentId: row.incident_id,
+      storageBucket: row.storage_bucket || "vehicle-evidence",
+      storagePath: row.storage_path,
+      photoType: row.photo_type,
+      description: row.description || "",
+      fileName: row.file_name || "",
+      mimeType: row.mime_type || "",
+      fileSize: row.file_size || 0,
+      uploadedBy: row.uploaded_by,
+      createdAt: row.created_at,
+    };
+  }
+
   function mapProfile(row) {
     return {
       id: row.id,
@@ -228,7 +247,7 @@
   }
 
   async function loadRuntime() {
-    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, profilesResult, auditResult, checklistTemplatesResult, checklistItemsResult] = await Promise.all([
+    const [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, photosResult, profilesResult, auditResult, checklistTemplatesResult, checklistItemsResult] = await Promise.all([
       client.from("vehicles").select("*").eq("is_active", true).order("domain"),
       client.from("employees").select("*").eq("is_active", true).order("full_name"),
       client.from("vehicle_assignments").select("*, vehicles(domain), employees(employee_number, full_name)").order("started_at", { ascending: false }).limit(500),
@@ -236,20 +255,23 @@
       client.from("maintenance_records").select("*, vehicles(domain)").order("created_at", { ascending: false }).limit(2500),
       client.from("vehicle_documents").select("*").order("expires_at", { ascending: true }),
       client.from("vehicle_equipment").select("*").order("equipment_name", { ascending: true }),
+      client.from("vehicle_photos").select("*").order("created_at", { ascending: false }),
       client.from("profiles").select("*, employees(employee_number, full_name)").order("display_name", { ascending: true }),
       client.from("audit_logs").select("*, actor_profile:profiles!audit_logs_actor_id_fkey(display_name)").order("created_at", { ascending: false }).limit(500),
       client.from("checklist_templates").select("*").order("stage", { ascending: true }),
       client.from("checklist_items").select("*, checklist_templates(stage)").order("sort_order", { ascending: true }),
     ]);
 
-    const firstError = [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, checklistTemplatesResult, checklistItemsResult].find((result) => result.error);
+    const firstError = [vehiclesResult, employeesResult, assignmentsResult, incidentsResult, maintenanceResult, documentsResult, equipmentResult, photosResult, checklistTemplatesResult, checklistItemsResult].find((result) => result.error);
     if (firstError) throw firstError.error;
 
     const assignments = assignmentsResult.data.map(mapAssignment);
     const documents = documentsResult.data.map(mapDocument);
     const equipment = equipmentResult.data.map(mapEquipment);
+    const photos = photosResult.data.map(mapPhoto);
     const documentsByVehicle = groupBy(documents, "vehicleId");
     const equipmentByVehicle = groupBy(equipment, "vehicleId");
+    const photosByVehicle = groupBy(photos, "vehicleId");
     const activeByVehicle = new Map(assignments.filter((item) => item.status === "active").map((item) => [item.vehicleId, item]));
     const vehicles = vehiclesResult.data.map(mapVehicle).map((vehicle) => {
       const active = activeByVehicle.get(vehicle.id);
@@ -260,6 +282,7 @@
         ...vehicle,
         documents: vehicleDocuments,
         equipment: equipmentByVehicle[vehicle.id] || [],
+        photos: photosByVehicle[vehicle.id] || [],
         vtv: vtv?.expiresAt || "",
         vth: vth?.expiresAt || "",
       };
@@ -274,6 +297,7 @@
       maintenance: maintenanceResult.data.map(mapMaintenance),
       documents,
       equipment,
+      photos,
       profiles: profilesResult.error ? [] : profilesResult.data.map(mapProfile),
       auditLogs: auditResult.error ? [] : auditResult.data.map(mapAuditLog),
       checklistTemplates: checklistTemplatesResult.data.map(mapChecklistTemplate),
@@ -438,6 +462,43 @@
     return mapEquipment(data);
   }
 
+  async function uploadVehicleEvidence(photo, file) {
+    if (!enabled) return photo;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "archivo";
+    const path = `vehicles/${photo.vehicleId}/${Date.now()}-${safeName}`;
+    const upload = await client.storage
+      .from("vehicle-evidence")
+      .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+    if (upload.error) throw upload.error;
+
+    const { data: authData } = await client.auth.getUser();
+    const { data, error } = await client
+      .from("vehicle_photos")
+      .insert({
+        vehicle_id: photo.vehicleId,
+        storage_path: path,
+        photo_type: photo.photoType,
+        description: photo.description || null,
+        file_name: file.name,
+        mime_type: file.type || null,
+        file_size: file.size || null,
+        uploaded_by: authData.user?.id || null,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return mapPhoto(data);
+  }
+
+  async function createEvidenceUrl(storagePath) {
+    if (!enabled || !storagePath) return "";
+    const { data, error } = await client.storage
+      .from("vehicle-evidence")
+      .createSignedUrl(storagePath, 60);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+
   async function updateProfileRole(profileId, role) {
     if (!enabled) return;
     const { data, error } = await client
@@ -496,6 +557,8 @@
     saveEmployee,
     saveDocument,
     saveEquipment,
+    uploadVehicleEvidence,
+    createEvidenceUrl,
     updateProfileRole,
     saveChecklistItem,
   };

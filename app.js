@@ -56,6 +56,7 @@ function loadRuntime() {
     maintenance: saved.maintenance || buildSeedMaintenance(seedData.vehicles || []),
     documents: saved.documents || [],
     equipment: saved.equipment || [],
+    photos: saved.photos || [],
     profiles: saved.profiles || [],
     auditLogs: saved.auditLogs || [],
     checklistTemplates: saved.checklistTemplates || [],
@@ -76,6 +77,7 @@ function saveRuntime() {
     maintenance: runtime.maintenance,
     documents: runtime.documents,
     equipment: runtime.equipment,
+    photos: runtime.photos,
     auditLogs: runtime.auditLogs,
     checklistTemplates: runtime.checklistTemplates,
     checklistItems: runtime.checklistItems,
@@ -412,6 +414,7 @@ function renderVehicleDetail(vehicle) {
   const maintenance = runtime.maintenance.filter((item) => item.vehicleId === vehicle.id).sort(sortDesc("createdAt"));
   const documents = vehicle.documents || (runtime.documents || []).filter((item) => item.vehicleId === vehicle.id);
   const equipment = vehicle.equipment || (runtime.equipment || []).filter((item) => item.vehicleId === vehicle.id);
+  const photos = vehicle.photos || (runtime.photos || []).filter((item) => item.vehicleId === vehicle.id);
   const fireExtinguisher = equipment.find((item) => normalize(item.name).includes("matafuego"));
   return `
     <section class="panel detail-panel" id="vehicleDetail">
@@ -435,11 +438,12 @@ function renderVehicleDetail(vehicle) {
         ${detailTab("summary", "Resumen")}
         ${detailTab("documents", `Documentacion ${documents.length}`)}
         ${detailTab("equipment", `Equipamiento ${equipment.length}`)}
+        ${detailTab("photos", `Archivos ${photos.length}`)}
         ${detailTab("repairs", `Reparaciones ${maintenance.length}`)}
         ${detailTab("history", `Historial ${assignments.length}`)}
         ${detailTab("damages", `Danos ${incidents.length}`)}
       </div>
-      ${renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment })}
+      ${renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment, photos })}
     </section>
   `;
 }
@@ -448,7 +452,7 @@ function detailTab(tab, label) {
   return `<button class="tab-btn ${state.vehicleDetailTab === tab ? "active" : ""}" data-action="detail-tab" data-tab="${tab}">${escapeHtml(label)}</button>`;
 }
 
-function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment }) {
+function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, documents, equipment, photos }) {
   if (state.vehicleDetailTab === "documents") {
     return `
       <div class="detail-section">
@@ -468,6 +472,17 @@ function renderVehicleDetailTab({ vehicle, assignments, incidents, maintenance, 
           ${equipment.map((item) => equipmentForm(item, vehicle.id)).join("") || empty("Sin equipamiento importado.")}
         </div>
         ${equipmentForm(null, vehicle.id)}
+      </div>
+    `;
+  }
+  if (state.vehicleDetailTab === "photos") {
+    return `
+      <div class="detail-section">
+        <h4>Fotos y archivos</h4>
+        <div class="record-form-list">
+          ${photos.map(photoMini).join("") || empty("Sin archivos cargados.")}
+        </div>
+        ${photoUploadForm(vehicle.id)}
       </div>
     `;
   }
@@ -702,6 +717,38 @@ function equipmentForm(item, vehicleId) {
   `;
 }
 
+function photoUploadForm(vehicleId) {
+  return `
+    <form class="record-form photo-form" id="photoForm">
+      <input type="hidden" name="vehicleId" value="${escapeAttr(vehicleId)}">
+      <label class="field"><span>Tipo</span><select name="photoType">
+        <option value="Tablero">Tablero / kilometraje</option>
+        <option value="Dano">Dano o irregularidad</option>
+        <option value="Documento">Documento</option>
+        <option value="Equipamiento">Equipamiento</option>
+        <option value="Otro">Otro</option>
+      </select></label>
+      <label class="field wide"><span>Descripcion</span><input name="description" placeholder="Ej. VTV 2027, dano paragolpes, tablero inicial"></label>
+      <label class="field wide"><span>Archivo</span><input name="file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+      <button class="btn" type="submit">Subir</button>
+    </form>
+  `;
+}
+
+function photoMini(item) {
+  const isImage = String(item.mimeType || "").startsWith("image/");
+  return `
+    <article class="mini-record photo-record">
+      <div>
+        <strong>${escapeHtml(item.photoType)}</strong> ${isImage ? statusTextBadge("Imagen") : statusTextBadge("Archivo")}
+        <br><span class="muted">${escapeHtml(item.description || item.fileName || item.storagePath)}</span>
+        <br><span class="muted">${formatDateTime(item.createdAt)}${item.fileName ? ` | ${escapeHtml(item.fileName)}` : ""}</span>
+      </div>
+      <button class="btn secondary" data-action="open-photo" data-photo-id="${escapeAttr(item.id)}">Ver</button>
+    </article>
+  `;
+}
+
 function renderUsers() {
   const roles = ["driver", "admin", "supervisor", "maintenance", "auditor", "super_admin"];
   const query = normalize(state.query);
@@ -916,6 +963,9 @@ function bindCommon() {
     form.addEventListener("submit", submitEquipmentForm);
   });
 
+  const photoForm = document.getElementById("photoForm");
+  if (photoForm) photoForm.addEventListener("submit", submitPhotoForm);
+
   document.querySelectorAll(".checklist-item-form").forEach((form) => {
     form.addEventListener("submit", submitChecklistItemForm);
   });
@@ -983,6 +1033,9 @@ async function handleAction(action, button) {
     state.vehicleId = "";
     state.vehicleDetailTab = "summary";
     render();
+  }
+  if (action === "open-photo") {
+    await openPhoto(button.dataset.photoId);
   }
 }
 
@@ -1120,6 +1173,63 @@ async function submitEquipmentForm(event) {
     render();
   } catch (error) {
     toast(error.message || "No se pudo guardar el equipamiento.");
+  }
+}
+
+async function submitPhotoForm(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.name) {
+    toast("Selecciona un archivo para subir.");
+    return;
+  }
+  const photo = {
+    vehicleId: String(form.get("vehicleId") || ""),
+    photoType: String(form.get("photoType") || "Otro"),
+    description: String(form.get("description") || "").trim(),
+  };
+  try {
+    const saved = state.dataMode === "supabase"
+      ? await window.fleetSupabase.uploadVehicleEvidence(photo, file)
+      : {
+          ...photo,
+          id: `P${Date.now()}`,
+          fileName: file.name,
+          mimeType: file.type,
+          fileSize: file.size,
+          storagePath: file.name,
+          createdAt: new Date().toISOString(),
+        };
+    runtime.photos = [saved, ...(runtime.photos || [])];
+    attachVehicleRecords(saved.vehicleId);
+    addAudit("photo_uploaded", state.user.username, "vehicle_photos", saved.id || saved.fileName);
+    saveRuntime();
+    toast("Archivo subido.");
+    render();
+  } catch (error) {
+    toast(error.message || "No se pudo subir el archivo.");
+  }
+}
+
+async function openPhoto(photoId) {
+  const photo = (runtime.photos || []).find((item) => item.id === photoId);
+  if (!photo) return;
+  try {
+    const url = state.dataMode === "supabase"
+      ? await window.fleetSupabase.createEvidenceUrl(photo.storagePath)
+      : "";
+    if (!url) {
+      toast("Archivo guardado localmente en modo demo.");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.click();
+  } catch (error) {
+    toast(error.message || "No se pudo abrir el archivo.");
   }
 }
 
@@ -1638,12 +1748,14 @@ function attachVehicleRecords(vehicleId) {
     if (vehicle.id !== vehicleId) return vehicle;
     const documents = (runtime.documents || []).filter((item) => item.vehicleId === vehicle.id);
     const equipment = (runtime.equipment || []).filter((item) => item.vehicleId === vehicle.id);
+    const photos = (runtime.photos || []).filter((item) => item.vehicleId === vehicle.id);
     const vtv = documents.find((item) => normalize(item.type) === "vtv");
     const vth = documents.find((item) => normalize(item.type) === "vth");
     return {
       ...vehicle,
       documents,
       equipment,
+      photos,
       vtv: vtv?.expiresAt || vehicle.vtv || "",
       vth: vth?.expiresAt || vehicle.vth || "",
     };

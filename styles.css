@@ -463,6 +463,13 @@ button {
   padding: 9px 10px;
 }
 
+.photo-record {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
