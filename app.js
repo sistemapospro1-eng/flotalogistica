@@ -6,6 +6,9 @@ const state = {
   view: "dashboard",
   query: "",
   area: "Todas",
+  reportStatus: "Todos",
+  reportFrom: "",
+  reportTo: "",
   vehicleId: "",
   vehicleDetailTab: "summary",
   editVehicleId: "",
@@ -594,16 +597,18 @@ function renderMaintenance() {
 }
 
 function renderReports() {
-  const assignments = runtime.assignments.slice().sort(sortDesc("startAt"));
+  const assignments = getReportAssignments();
   const byVehicle = groupCount(assignments, "domain");
   const byDriver = groupCount(assignments, "driver");
   const totalKm = assignments.reduce((sum, item) => sum + Number(item.distance || 0), 0);
+  const openDamages = getFilteredIncidentsForReports().length;
   return `
     ${topbar("Reportes", `<button class="btn" data-action="export">Exportar CSV</button>`)}
+    ${reportFilters()}
     <section class="grid-3">
       <div class="panel"><h3>Usos registrados</h3><strong class="big">${assignments.length}</strong><p class="muted">Asignaciones historicas.</p></div>
       <div class="panel"><h3>Kilometros cerrados</h3><strong class="big">${totalKm}</strong><p class="muted">Solo usos con devolucion.</p></div>
-      <div class="panel"><h3>Danos abiertos</h3><strong class="big">${runtime.incidents.filter((i) => i.status === "open").length}</strong><p class="muted">Preexistentes para proximos conductores.</p></div>
+      <div class="panel"><h3>Danos abiertos</h3><strong class="big">${openDamages}</strong><p class="muted">Filtrados por patente/area cuando aplica.</p></div>
     </section>
     <section class="grid-2" style="margin-top:16px">
       <div class="panel"><h3>Uso por vehiculo</h3>${miniTable(byVehicle, ["Patente", "Usos"])}</div>
@@ -612,6 +617,22 @@ function renderReports() {
     <section class="panel" style="margin-top:16px">
       <h3>Historial completo</h3>
       <div class="table-wrap">${assignmentTable(assignments)}</div>
+    </section>
+  `;
+}
+
+function reportFilters() {
+  const areas = ["Todas", ...Array.from(new Set(runtime.vehicles.map((vehicle) => vehicle.area).filter(Boolean))).sort()];
+  const statuses = [["Todos", "Todos"], ["active", "En uso"], ["closed", "Cerrados"]];
+  return `
+    <section class="panel report-filters">
+      <div class="toolbar">
+        <label class="field search"><span>Buscar</span><input data-filter="query" value="${escapeAttr(state.query)}" placeholder="Patente, conductor, legajo"></label>
+        <label class="field"><span>Desde</span><input data-filter="reportFrom" type="date" value="${escapeAttr(state.reportFrom)}"></label>
+        <label class="field"><span>Hasta</span><input data-filter="reportTo" type="date" value="${escapeAttr(state.reportTo)}"></label>
+        <label class="field"><span>Estado</span><select data-filter="reportStatus">${statuses.map(([value, label]) => `<option value="${value}" ${state.reportStatus === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label class="field"><span>Area</span><select data-filter="area">${areas.map((area) => `<option value="${escapeAttr(area)}" ${state.area === area ? "selected" : ""}>${escapeHtml(area)}</option>`).join("")}</select></label>
+      </div>
     </section>
   `;
 }
@@ -933,10 +954,12 @@ function bindCommon() {
   });
 
   document.querySelectorAll("[data-filter]").forEach((input) => {
-    input.addEventListener("input", () => {
+    const update = () => {
       state[input.dataset.filter] = input.value;
       render();
-    });
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("change", update);
   });
 
   document.querySelectorAll("[data-action]").forEach((button) => {
@@ -1449,6 +1472,37 @@ function getAlerts() {
   return alerts.sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
 
+function getReportAssignments() {
+  const query = normalize(state.query);
+  const from = state.reportFrom ? new Date(`${state.reportFrom}T00:00:00`) : null;
+  const to = state.reportTo ? new Date(`${state.reportTo}T23:59:59`) : null;
+  return runtime.assignments
+    .filter((item) => {
+      const vehicle = getVehicle(item.vehicleId) || runtime.vehicles.find((candidate) => candidate.domain === item.domain) || {};
+      const started = new Date(item.startAt || 0);
+      const haystack = normalize([item.domain, item.driver, item.employeeId, vehicle.area, vehicle.type, item.status].join(" "));
+      if (query && !haystack.includes(query)) return false;
+      if (state.area !== "Todas" && vehicle.area !== state.area) return false;
+      if (state.reportStatus !== "Todos" && item.status !== state.reportStatus) return false;
+      if (from && started < from) return false;
+      if (to && started > to) return false;
+      return true;
+    })
+    .sort(sortDesc("startAt"));
+}
+
+function getFilteredIncidentsForReports() {
+  const query = normalize(state.query);
+  return runtime.incidents.filter((incident) => {
+    const vehicle = getVehicle(incident.vehicleId) || runtime.vehicles.find((candidate) => candidate.domain === incident.domain) || {};
+    const haystack = normalize([incident.domain, incident.title, incident.description, incident.reportedBy, vehicle.area].join(" "));
+    if (incident.status !== "open") return false;
+    if (query && !haystack.includes(query)) return false;
+    if (state.area !== "Todas" && vehicle.area !== state.area) return false;
+    return true;
+  });
+}
+
 function getActiveAssignments() {
   return runtime.assignments.filter((item) => item.status === "active" && !item.endAt).sort(sortDesc("startAt"));
 }
@@ -1512,7 +1566,7 @@ function assignmentTable(assignments) {
   return `
     <table>
       <thead><tr><th>Patente</th><th>Conductor</th><th>Inicio</th><th>Fin</th><th>Km inicial</th><th>Km final</th><th>Recorrido</th><th>Estado</th></tr></thead>
-      <tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.driver)}</td><td>${formatDateTime(item.startAt)}</td><td>${formatDateTime(item.endAt)}</td><td>${item.odometerStart}</td><td>${item.odometerEnd ?? "-"}</td><td>${item.distance ?? "-"}</td><td>${statusTextBadge(item.status)}</td></tr>`).join("")}</tbody>
+      <tbody>${assignments.map((item) => `<tr><td>${escapeHtml(item.domain)}</td><td>${escapeHtml(item.driver)}</td><td>${formatDateTime(item.startAt)}</td><td>${formatDateTime(item.endAt)}</td><td>${item.odometerStart}</td><td>${item.odometerEnd ?? "-"}</td><td>${item.distance ?? "-"}</td><td>${statusTextBadge(item.status)}</td></tr>`).join("") || `<tr><td colspan="8">${empty("Sin resultados para los filtros seleccionados.")}</td></tr>`}</tbody>
     </table>
   `;
 }
@@ -1716,9 +1770,10 @@ function addAudit(action, user, entity, entityId) {
 }
 
 function exportCsv() {
+  const assignments = state.view === "reports" ? getReportAssignments() : runtime.assignments;
   const rows = [
     ["patente", "conductor", "legajo", "inicio", "fin", "km_inicial", "km_final", "km_recorridos", "notas_inicio", "notas_fin"],
-    ...runtime.assignments.map((item) => [item.domain, item.driver, item.employeeId, item.startAt, item.endAt || "", item.odometerStart, item.odometerEnd || "", item.distance || "", item.startNotes, item.endNotes]),
+    ...assignments.map((item) => [item.domain, item.driver, item.employeeId, item.startAt, item.endAt || "", item.odometerStart, item.odometerEnd || "", item.distance || "", item.startNotes, item.endNotes]),
   ];
   const blob = new Blob([rows.map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);

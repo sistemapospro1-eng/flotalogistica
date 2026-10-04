@@ -332,6 +332,19 @@ button {
   min-width: 220px;
 }
 
+.report-filters {
+  margin-bottom: 16px;
+}
+
+.report-filters .field {
+  min-width: 150px;
+}
+
+.report-filters .search {
+  min-width: min(360px, 100%);
+  flex: 1 1 280px;
+}
+
 .vehicle-list {
   display: grid;
   gap: 10px;
