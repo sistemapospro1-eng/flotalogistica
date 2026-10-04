@@ -31,6 +31,17 @@ const checklistStatuses = [
   ["no_aplica", "No aplica"],
 ];
 
+const vehicleTypeOptions = [
+  ["", "Todos"],
+  ["Automovil", "Automovil"],
+  ["Camioneta", "Camioneta"],
+  ["Camion", "Camion"],
+  ["Furgon", "Furgon"],
+  ["Utilitario", "Utilitario"],
+  ["4x4", "4x4"],
+  ["4x2", "4x2"],
+];
+
 function loadRuntime() {
   const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
   const oldSaved = JSON.parse(localStorage.getItem("gestion-flota-localizador-v1") || "{}");
@@ -377,7 +388,7 @@ function renderVehicleForm(vehicle) {
         <label class="field"><span>Patente</span><input name="domain" required value="${escapeAttr(vehicle?.domain || "")}"></label>
         <label class="field"><span>Interno</span><input name="internal" value="${escapeAttr(vehicle?.internal || "")}"></label>
         <label class="field"><span>Modelo</span><input name="model" value="${escapeAttr(vehicle?.model || "")}"></label>
-        <label class="field"><span>Tipo</span><input name="type" value="${escapeAttr(vehicle?.type || "")}" placeholder="Camioneta, camion, auto"></label>
+        <label class="field"><span>Tipo</span><select name="type">${vehicleTypeSelectOptions(vehicle?.type || "", false)}</select></label>
         <label class="field"><span>Area</span><input name="area" value="${escapeAttr(vehicle?.area || "")}"></label>
         <label class="field"><span>Sector</span><input name="sector" value="${escapeAttr(vehicle?.sector || "")}"></label>
         <label class="field"><span>Kilometraje</span><input name="odometer" type="number" min="0" value="${escapeAttr(vehicle?.odometer || 0)}"></label>
@@ -595,13 +606,14 @@ function renderChecklistManager(stage, title) {
         ${items.map((item) => checklistItemForm(item, stage, template?.id)).join("") || empty("Sin items cargados. Agrega el primero abajo.")}
       </div>
       ${checklistItemForm(null, stage, template?.id)}
-      <p class="muted role-note">Tipo de vehiculo es opcional. Si queda vacio, el item aplica a todos.</p>
+      <p class="muted role-note">Usa "Todos" para que el item aparezca en cualquier vehiculo, o elegi un tipo para limitarlo.</p>
     </div>
   `;
 }
 
 function checklistItemForm(item, stage, templateId) {
   const isNew = !item;
+  const currentType = item?.appliesToVehicleType || "";
   return `
     <form class="checklist-item-form" data-checklist-item="${escapeAttr(item?.id || "new")}">
       <input type="hidden" name="id" value="${escapeAttr(item?.id || "")}">
@@ -609,7 +621,7 @@ function checklistItemForm(item, stage, templateId) {
       <input type="hidden" name="templateId" value="${escapeAttr(item?.templateId || templateId || "")}">
       <label class="field"><span>Categoria</span><input name="category" required value="${escapeAttr(item?.category || "")}" placeholder="Ej. Luces"></label>
       <label class="field"><span>Item</span><input name="label" required value="${escapeAttr(item?.label || "")}" placeholder="Ej. Stop"></label>
-      <label class="field"><span>Tipo vehiculo</span><input name="vehicleType" value="${escapeAttr(item?.appliesToVehicleType || "")}" placeholder="Camioneta, camion, auto"></label>
+      <label class="field"><span>Tipo vehiculo</span><select name="vehicleType">${vehicleTypeSelectOptions(currentType)}</select></label>
       <label class="field"><span>Orden</span><input name="sortOrder" type="number" value="${escapeAttr(item?.sortOrder ?? 0)}"></label>
       <label class="field"><span>Estado</span><select name="isActive">
         <option value="true" ${item?.isActive !== false ? "selected" : ""}>Activo</option>
@@ -1498,7 +1510,7 @@ function getChecklistItems(stage, vehicleType = "", includeInactive = false) {
   const items = (runtime.checklistItems || [])
     .filter((item) => item.stage === stage)
     .filter((item) => includeInactive || item.isActive !== false)
-    .filter((item) => !vehicleType || !item.appliesToVehicleType || normalize(item.appliesToVehicleType) === normalize(vehicleType));
+    .filter((item) => checklistAppliesToVehicle(item.appliesToVehicleType, vehicleType));
   const source = items.length ? items : fallbackChecklistItems(stage);
   return source.slice().sort((a, b) => {
     const order = Number(a.sortOrder || 0) - Number(b.sortOrder || 0);
@@ -1529,6 +1541,28 @@ function groupChecklistItems(items) {
     groups.get(item.category).push(item);
   });
   return Array.from(groups.entries());
+}
+
+function checklistAppliesToVehicle(appliesToVehicleType, vehicleType) {
+  const rule = normalize(appliesToVehicleType);
+  const type = normalize(vehicleType);
+  if (!rule || rule === "todos") return true;
+  if (!type) return true;
+  const parts = rule.split(/[,;|/]+/).map((part) => part.trim()).filter(Boolean);
+  return parts.some((part) => part === type || part.includes(type) || type.includes(part));
+}
+
+function vehicleTypeSelectOptions(currentType = "", includeAll = true) {
+  const normalizedCurrent = normalize(currentType);
+  const optionsSource = includeAll ? vehicleTypeOptions : [["", "Sin tipo"], ...vehicleTypeOptions.filter(([value]) => value)];
+  const hasKnownOption = optionsSource.some(([value]) => normalize(value) === normalizedCurrent);
+  const options = optionsSource
+    .map(([value, label]) => `<option value="${escapeAttr(value)}" ${normalize(value) === normalizedCurrent ? "selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+  const custom = currentType && !hasKnownOption
+    ? `<option value="${escapeAttr(currentType)}" selected>${escapeHtml(currentType)}</option>`
+    : "";
+  return options + custom;
 }
 
 function formatDate(value) {
