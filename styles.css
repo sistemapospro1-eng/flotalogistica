@@ -278,6 +278,12 @@ button {
   gap: 10px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .user-bulk-panel {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 320px) auto;

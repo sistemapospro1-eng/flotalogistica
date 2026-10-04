@@ -876,7 +876,10 @@ function renderUsers() {
                 <option value="true" ${profile.isActive ? "selected" : ""}>Activo</option>
                 <option value="false" ${!profile.isActive ? "selected" : ""}>Inactivo</option>
               </select></td>
-              <td><button class="btn secondary" data-action="save-profile" data-profile-id="${escapeAttr(profile.id)}">Guardar</button></td>
+              <td><div class="row-actions">
+                <button class="btn secondary" data-action="save-profile" data-profile-id="${escapeAttr(profile.id)}">Guardar</button>
+                ${profile.role === "driver" ? `<button class="btn secondary" data-action="reset-driver-password" data-profile-id="${escapeAttr(profile.id)}">Clave</button>` : ""}
+              </div></td>
             </tr>
           `).join("") || `<tr><td colspan="5">${empty("No hay usuarios creados en Supabase Auth.")}</td></tr>`}</tbody>
         </table>
@@ -1100,6 +1103,7 @@ async function handleAction(action, button) {
   if (action === "export-excel") exportExcel();
   if (action === "export-pdf") exportPdf();
   if (action === "save-profile") await submitProfileForm(button.dataset.profileId);
+  if (action === "reset-driver-password") await resetDriverPassword(button.dataset.profileId);
   if (action === "bulk-create-drivers") await createDriverUsersBulk();
   if (action === "reset") {
     localStorage.removeItem(storageKey);
@@ -1339,6 +1343,26 @@ async function createDriverUsersBulk() {
     render();
   } catch (error) {
     toast(error.message || "No se pudieron crear los usuarios.");
+  }
+}
+
+async function resetDriverPassword(profileId) {
+  if (state.dataMode !== "supabase") {
+    toast("Esta funcion requiere Supabase.");
+    return;
+  }
+  const profile = (runtime.profiles || []).find((item) => item.id === profileId);
+  if (!profile) return;
+  const password = String(document.getElementById("bulkDriverPassword")?.value || "");
+  if (password.length < 8) {
+    toast("Escribi arriba una contraseña de al menos 8 caracteres.");
+    return;
+  }
+  try {
+    await window.fleetSupabase.createDriverUsers({ defaultPassword: password, profileId });
+    toast(`Clave actualizada para ${profile.displayName}.`);
+  } catch (error) {
+    toast(error.message || "No se pudo actualizar la clave.");
   }
 }
 
