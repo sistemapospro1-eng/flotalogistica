@@ -16,6 +16,7 @@ const state = {
   editDriverId: "",
   editMaintenanceId: "",
   previousView: "dashboard",
+  mobileMenuOpen: false,
   loading: false,
   dataMode: window.fleetSupabase?.isEnabled() ? "supabase" : "demo",
 };
@@ -235,8 +236,10 @@ function render() {
   if (!isAdmin && state.view !== "password") state.view = "driver";
 
   app.innerHTML = `
-    <div class="layout">
-      <aside class="sidebar">
+    <div class="layout ${state.mobileMenuOpen ? "menu-open" : ""}">
+      <button class="mobile-menu-btn" data-action="toggle-mobile-menu" aria-label="Abrir menu">Menu</button>
+      <button class="mobile-menu-backdrop" data-action="close-mobile-menu" aria-label="Cerrar menu"></button>
+      <aside class="sidebar" aria-label="Menu principal">
         <div class="brand-mark"><span class="bolt">F</span><span>Gestión Flota</span></div>
         <nav class="side-nav">
           ${isAdmin ? navButton("dashboard", "Panel") : ""}
@@ -1065,6 +1068,7 @@ function bindCommon() {
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
       state.view = button.dataset.view;
+      state.mobileMenuOpen = false;
       render();
     });
   });
@@ -1118,6 +1122,14 @@ function bindCommon() {
 }
 
 async function handleAction(action, button) {
+  if (action === "toggle-mobile-menu") {
+    state.mobileMenuOpen = !state.mobileMenuOpen;
+    render();
+  }
+  if (action === "close-mobile-menu") {
+    state.mobileMenuOpen = false;
+    render();
+  }
   if (action === "logout") {
     addAudit("logout", state.user.username, "users", state.user.username);
     if (state.dataMode === "supabase") await window.fleetSupabase.signOut();
