@@ -1,6 +1,6 @@
 const app = document.getElementById("app");
 const storageKey = "Gestión-flota-operacion-v2";
-const authorCredit = "PROGRAMADORA Y DESARROLLO VANINA CABRERA";
+const authorCredit = "PROGRAMACIÓN Y DESARROLLO: VANINA CABRERA";
 
 const state = {
   user: null,
